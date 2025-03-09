@@ -1,0 +1,173 @@
+# Analysis of Existing DTOs and Models
+
+**1. DTOs and Corresponding Models:**
+
+| DTO Name                      | Model Name        | Usage                                  |
+| ----------------------------- | ----------------- | -------------------------------------- |
+| `ProviderTemplateCreateRequest` | N/A               | Request body for creating provider templates |
+| `ProviderTemplateResponse`    | N/A               | Response body for provider template operations |
+| `ReporterRequest`             | `Reporter`        | Request body for creating a reporter   |
+| `ReporterResponse`            | `Reporter`        | Response body for reporter operations  |
+| `SubjectRequest`              | `Subject`         | Request body for creating a subject    |
+| `SubjectResponse`             | `Subject`         | Response body for subject operations   |
+| `CaseRequest`                 | `Case`            | Request body for creating a case       |
+| `CaseResponse`                | `Case`            | Response body for case operations      |
+| `AbuseReportRequest`          | N/A               | Request body for submitting an abuse report |
+| `AbuseReportResponse`         | N/A               | Response body for abuse report submission |
+| `StatusUpdateRequest`         | `Case` (status field) | Request body for updating case status |
+| `BlockContentRequest`         | `BlockedContent`  | Request body for blocking content      |
+| `BlockedContentResponse`      | `BlockedContent`  | Response body for blocked content operations |
+| `CommunicationRequest`        | `Communication`   | Request body for creating a communication |
+| N/A                           | `Evidence`        | Model for evidence files |
+| `RefreshTokenRequest`         | N/A               | Request body for refreshing a token |
+| `ValidateTokenRequest`        | N/A               | Request body for validating a token |
+| `PublicCommentRequest`        | `Communication`   | Request body for adding a public comment |
+| N/A                           | `CaseScan`        | Model for case scans |
+| N/A                           | `ScanResult`      | Model for scan results |
+
+**2. Field Mapping Analysis:**
+
+Here's a breakdown of the field mappings between DTOs and their corresponding models, noting discrepancies and inconsistencies:
+
+*   **Reporter:**
+
+    *   `ReporterRequest.Email` <-> `Reporter.Email`
+    *   `ReporterRequest.Name` <-> `Reporter.Name`
+    *   `ReporterResponse.ID` <-> `Reporter.ID` (`BaseResponse`)
+    *   `ReporterResponse.Email` <-> `Reporter.Email`
+    *   `ReporterResponse.Name` <-> `Reporter.Name`
+    *   `ReporterResponse.CreatedAt` <-> `Reporter.CreatedAt` (`BaseResponse`)
+    *   `ReporterResponse.UpdatedAt` <-> `Reporter.UpdatedAt` (`BaseResponse`)
+    *   *Notes:* Fields map cleanly. `ReporterResponse` embeds `BaseResponse`.
+
+*   **Subject:**
+
+    *   `SubjectRequest.Identifier` <-> `Subject.Identifier`
+    *   `SubjectResponse.ID` <-> `Subject.ID` (`BaseResponse`)
+    *   `SubjectResponse.Identifier` <-> `Subject.Identifier`
+    *   `SubjectResponse.CreatedAt` <-> `Subject.CreatedAt` (`BaseResponse`)
+    *   `SubjectResponse.UpdatedAt` <-> `Subject.UpdatedAt` (`BaseResponse`)
+    *   *Notes:* Fields map cleanly. `SubjectResponse` embeds `BaseResponse`. `Subject.Type` and `Subject.SourceURL` are not present in `SubjectRequest` or `SubjectResponse`.
+
+*   **Case:**
+
+    *   `CaseRequest.Description` <-> `Case.Description` (`BaseRequest`)
+    *   `CaseRequest.Type` <-> `Case.Type` (string <-> `CaseType`)
+    *   `CaseRequest.Priority` <-> `Case.Priority` (string <-> `CasePriority`)
+    *   `CaseRequest.Source` <-> `Case.Source` (string <-> `ReportSource`)
+    *   `CaseRequest.NeedsReview` <-> `Case.NeedsReview`
+    *   `CaseRequest.ReporterID` <-> `Case.ReporterID`
+    *   `CaseRequest.SubjectID` <-> `Case.SubjectID`
+    *   `CaseResponse.ID` <-> `Case.ID` (`BaseResponse`)
+    *   `CaseResponse.ReferenceNumber` <-> `Case.ReferenceNumber`
+    *   `CaseResponse.Type` <-> `Case.Type` (string <-> `CaseType`)
+    *   `CaseResponse.Status` <-> `Case.Status` (string <-> `CaseStatus`)
+    *   `CaseResponse.Priority` <-> `Case.Priority` (string <-> `CasePriority`)
+    *   `CaseResponse.Description` <-> `Case.Description` (`BaseRequest`)
+    *   `CaseResponse.Source` <-> `Case.Source` (string <-> `ReportSource`)
+    *   `CaseResponse.NeedsReview` <-> `Case.NeedsReview`
+    *   `CaseResponse.ReporterID` <-> `Case.ReporterID`
+    *   `CaseResponse.SubjectID` <-> `Case.SubjectID`
+    *   `CaseResponse.CreatedAt` <-> `Case.CreatedAt` (`BaseResponse`)
+    *   `CaseResponse.UpdatedAt` <-> `Case.UpdatedAt` (`BaseResponse`)
+    *   *Notes:*  DTOs use strings for `Type`, `Priority`, and `Source`, while the `Case` model uses custom `CaseType`, `CasePriority`, and `ReportSource` types. `Case.ClassificationScores`, `Case.RiskFactors`, `Case.AssigneeID`, and `Case.LastActivityAt` are not present in either DTO. `CaseRequest` embeds `BaseRequest` and `CaseResponse` embeds `BaseResponse`.
+
+*   **BlockedContent:**
+
+    *   `BlockContentRequest.Hash` <-> `BlockedContent.Hash` (string <-> `mh.Multihash`)
+    *   `BlockContentRequest.MimeType` <-> `BlockedContent.MimeType`
+    *   `BlockContentRequest.FileName` <-> `BlockedContent.FileName`
+    *   `BlockContentRequest.Size` <-> `BlockedContent.Size`
+    *   `BlockContentRequest.UploaderID` <-> `BlockedContent.UploaderID`
+    *   `BlockContentRequest.Reason` <-> `BlockedContent.Reason`
+    *   `BlockContentRequest.Severity` <-> `BlockedContent.Severity`
+    *   `BlockContentRequest.Action` <-> `BlockedContent.Action`
+    *   `BlockContentRequest.Description` <-> `BlockedContent.Description`
+    *   `BlockContentRequest.Source` <-> `BlockedContent.Source`
+    *   `BlockContentRequest.CaseID` <-> `BlockedContent.CaseID`
+    *   `BlockContentRequest.ExpiresAt` <-> `BlockedContent.ExpiresAt`
+    *   `BlockContentRequest.Metadata` <-> `BlockedContent.Metadata` (map[string]interface{} <-> `datatypes.JSON`)
+    *   `BlockedContentResponse.ID` <-> `BlockedContent.ID`
+    *   `BlockedContentResponse.Hash` <-> `BlockedContent.Hash` (string <-> `mh.Multihash`)
+    *   `BlockedContentResponse.MimeType` <-> `BlockedContent.MimeType`
+    *   `BlockedContentResponse.FileName` <-> `BlockedContent.FileName`
+    *   `BlockedContentResponse.Size` <-> `BlockedContent.Size`
+    *   `BlockedContentResponse.UploaderID` <-> `BlockedContent.UploaderID`
+    *   `BlockedContentResponse.Reason` <-> `BlockedContent.Reason`
+    *   `BlockedContentResponse.Severity` <-> `BlockedContent.Severity`
+    *   `BlockedContentResponse.Action` <-> `BlockedContent.Action`
+    *   `BlockedContentResponse.Description` <-> `BlockedContent.Description`
+    *   `BlockedContentResponse.Source` <-> `BlockedContent.Source`
+    *   `BlockedContentResponse.CaseID` <-> `BlockedContent.CaseID`
+    *   `BlockedContentResponse.BlockedBy` <-> `BlockedContent.BlockedBy`
+    *   `BlockedContentResponse.ExpiresAt` <-> `BlockedContent.ExpiresAt`
+    *   `BlockedContentResponse.ReviewedAt` <-> `BlockedContent.ReviewedAt`
+    *   `BlockedContentResponse.CreatedAt` <-> `BlockedContent.CreatedAt`
+    *   `BlockedContentResponse.UpdatedAt` <-> `BlockedContent.UpdatedAt`
+    *   `BlockedContentResponse.Metadata` <-> `BlockedContent.Metadata` (map[string]interface{} <-> `datatypes.JSON`)
+    *   *Notes:* `BlockedContent.Hash` is stored as `mh.Multihash` in the model but is converted to a base58 encoded string in the response DTO and expects a string in the request DTO. `BlockedContent.BlockedBy` and `BlockedContent.ReviewedAt` are not present in the request DTO.
+
+*   **Communication:**
+
+    *   `CommunicationRequest.Content` <-> `Communication.Content`
+    *   `CommunicationRequest.Type` <-> `Communication.Type` (string <-> `CommunicationType`)
+    *   `CommunicationRequest.Direction` <-> `Communication.Direction` (string <-> `CommunicationDirection`)
+    *   `CommunicationRequest.ParentID` <-> `Communication.ParentID`
+    *   *Notes:* `Communication.CaseID`, `Communication.SenderID`, `Communication.ThreadID`, `Communication.CreatedAt`, and `Communication.UpdatedAt` are not present in the request DTO.
+
+*   **Evidence:**
+
+    *   `Evidence.ID`
+    *   `Evidence.CaseID` <-> `Case.ID`
+    *   `Evidence.SubmitterID`
+    *   `Evidence.FileName`
+    *   `Evidence.ContentType`
+    *   `Evidence.StorageHash`
+    *   `Evidence.FileSize`
+    *   `Evidence.Source` <-> (`EvidenceSource`)
+    *   `Evidence.Description`
+    *   `Evidence.Metadata`
+
+    *Notes:* There are currently no DTOs for Evidence.
+
+*   **CaseScan:**
+
+    *   `CaseScan.ID`
+    *   `CaseScan.CaseID` <-> `Case.ID`
+    *   `CaseScan.SubjectID` <-> `Subject.ID`
+    *   `CaseScan.Status` <-> (`ScanStatus`)
+    *   `CaseScan.Priority`
+    *   `CaseScan.RequestedBy`
+    *   `CaseScan.ScheduledFor`
+    *   `CaseScan.LastAttempt`
+    *   `CaseScan.Attempts`
+    *   `CaseScan.FileName`
+    *   `CaseScan.Type`
+    *   `CaseScan.StorageKey`
+    *   `CaseScan.FileInfo`
+
+    *Notes:* There are currently no DTOs for CaseScan.
+
+*   **ScanResult:**
+
+    *   `ScanResult.ID`
+    *   `ScanResult.CaseScanID` <-> `CaseScan.ID`
+    *   `ScanResult.ScannerID`
+    *   `ScanResult.Passed`
+    *   `ScanResult.Reason`
+    *   `ScanResult.Timestamp`
+    *   `ScanResult.Metadata`
+
+    *Notes:* There are currently no DTOs for ScanResult.
+
+**3. Classification of DTO Usage:**
+
+This is already included in the first table.
+
+**4. Identified Missing DTOs:**
+
+*   There are no DTOs for `Evidence`. The API currently returns a `map[string]interface{}` for evidence, which should be replaced with a proper DTO.
+*   There are no specific DTOs for listing operations (e.g., a `CaseListResponse` DTO). The `queryutilHttp.ProcessListRequest` function uses anonymous functions to map the model to a `map[string]interface{}`. This should be replaced with proper DTOs.
+*   There are no DTOs for `CaseScan` or `ScanResult`.
+
+I have added the field mappings for `Evidence`, `CaseScan`, and `ScanResult` to the report.
