@@ -1,4 +1,4 @@
-// Package migrations provides database migration support for the template plugin
+// Package migrations provides database migration support for the abuse plugin
 // It embeds and serves SQL migration files for both MySQL and SQLite databases
 package migrations
 

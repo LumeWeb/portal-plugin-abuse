@@ -1,0 +1,49 @@
+# Abuse Plugin Mocks
+with-expecter: true
+resolve-type-alias: false
+disable-version-string: true
+issue-845-fix: true
+inpackage: false
+keeptree: false
+all: false
+mockname: "Mock{{.InterfaceName}}"
+filename: "mock_{{.InterfaceName}}.go" # This doesn't matter, the package config overrides it
+
+packages:
+  go.lumeweb.com/portal-plugin-abuse/internal/types/service:
+    config:
+      dir: "internal/service/mocks"
+      outpkg: "mocks"
+      filename: "{{.InterfaceName}}.go"  # Unique filenames
+    interfaces:
+      EvidenceService: {}
+      BlockListService: {}
+      CaseService: {}
+      ReporterService: {}
+      SubjectService: {}
+      EmailService: {}
+      CommunicationService: {}
+      ScanService: {}
+      TokenService: {}
+      SearchService: {}
+      AbuseReportService: {}
+
+  go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces:
+    config:
+      dir: "internal/pkg/email/mocks"
+      outpkg: "emailmocks"
+      filename: "{{.InterfaceName}}.go"
+    interfaces:
+      IMAPClientConn: {}
+      IMAPDialer: {}
+      EmailHandlerFunc: {}
+      ContentExtractor: {}
+
+  go.lumeweb.com/portal-plugin-abuse/internal/scanner:
+    config:
+      dir: "internal/scanner/mocks"
+      outpkg: "mocks"
+      filename: "{{.InterfaceName}}.go"
+    interfaces:
+      ScannerClient: {}
+      CoreStorageProtocolComposite: {}

@@ -1,0 +1,162 @@
+package misc
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base32"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"testing"
+
+	"github.com/mr-tron/base58"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"lukechampine.com/blake3"
+)
+
+// TestS5BlobID verifies that our S5 blob ID generation follows the specification
+// from https://docs.s5.pro/spec/blobs.html
+func TestS5BlobID(t *testing.T) {
+	// Test data
+	testData := []byte("This is test data for S5 blob ID generation")
+
+	// Generate real BLAKE3 hash using Sum256
+	blake3Sum := blake3.Sum256(testData)
+	blake3Hash := blake3Sum[:] // Convert to slice
+
+	// Generate real SHA256 hash
+	sha256Sum := sha256.Sum256(testData)
+	sha256Hash := sha256Sum[:] // Convert to slice
+
+	// Print the actual hashes we're using
+	fmt.Printf("BLAKE3 hash of test data: %x\n", blake3Hash)
+	fmt.Printf("SHA256 hash of test data: %x\n", sha256Hash)
+
+	// Create S5 Blob ID constructor following the spec
+	constructS5BlobID := func(hashFn byte, hashBytes []byte, sizeBytes []byte) []byte {
+		// Magic bytes: 0x5b (S5 Blob) + 0x82 (plaintext, unencrypted)
+		magicBytes := []byte{0x5b, 0x82}
+
+		// Full blob ID: magic bytes + hash function + hash bytes + size bytes
+		blobID := make([]byte, 0, len(magicBytes)+1+len(hashBytes)+len(sizeBytes))
+		blobID = append(blobID, magicBytes...)
+		blobID = append(blobID, hashFn)
+		blobID = append(blobID, hashBytes...)
+		blobID = append(blobID, sizeBytes...)
+
+		return blobID
+	}
+
+	// Test cases: different sizes and hash functions
+	testCases := []struct {
+		name      string
+		hashFn    byte
+		hash      []byte
+		size      uint64
+		encodings []string // encodings to test
+	}{
+		{
+			name:      "BLAKE3 hash, small file (< 256 bytes)",
+			hashFn:    0x1e, // BLAKE3 hash function
+			hash:      blake3Hash,
+			size:      42,
+			encodings: []string{"hex", "base64url", "base32", "base58"},
+		},
+		{
+			name:      "SHA256 hash, small file (< 256 bytes)",
+			hashFn:    0x12, // SHA256 hash function
+			hash:      sha256Hash,
+			size:      100,
+			encodings: []string{"hex", "base64url"},
+		},
+		{
+			name:      "BLAKE3 hash, medium file (< 64KiB)",
+			hashFn:    0x1e,
+			hash:      blake3Hash,
+			size:      32768, // 32 KiB
+			encodings: []string{"hex", "base32"},
+		},
+		{
+			name:      "BLAKE3 hash, large file (< 4GiB)",
+			hashFn:    0x1e,
+			hash:      blake3Hash,
+			size:      134217728, // 128 MiB
+			encodings: []string{"hex", "base58"},
+		},
+	}
+
+	// Run test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Encode size as little-endian bytes
+			var sizeBuffer bytes.Buffer
+			err := binary.Write(&sizeBuffer, binary.LittleEndian, tc.size)
+			require.NoError(t, err, "Failed to write size bytes")
+
+			// The spec says to trim trailing zeros from size bytes
+			sizeBytes := bytes.TrimRight(sizeBuffer.Bytes(), "\x00")
+
+			// Create the blob ID
+			blobID := constructS5BlobID(tc.hashFn, tc.hash, sizeBytes)
+
+			// Check that the structure matches the spec
+			require.Equal(t, byte(0x5b), blobID[0], "First magic byte should be 0x5b")
+			require.Equal(t, byte(0x82), blobID[1], "Second magic byte should be 0x82")
+			require.Equal(t, tc.hashFn, blobID[2], "Hash function byte incorrect")
+			require.Equal(t, tc.hash, blobID[3:3+len(tc.hash)], "Hash bytes don't match")
+
+			// Print the S5 blob ID in different encodings
+			fmt.Printf("S5 Blob ID (%s):\n", tc.name)
+
+			// Calculate expected length for verification
+			expectedLen := 2 + 1 + len(tc.hash) + len(sizeBytes) // magic bytes + hash fn + hash + size
+			require.Equal(t, expectedLen, len(blobID), "Blob ID length incorrect")
+
+			for _, encoding := range tc.encodings {
+				var encoded string
+				switch encoding {
+				case "hex":
+					encoded = hex.EncodeToString(blobID)
+					fmt.Printf("  hex:       %s (len: %d)\n", encoded, len(encoded))
+				case "base64url":
+					encoded = base64.URLEncoding.EncodeToString(blobID)
+					fmt.Printf("  base64url: %s (len: %d)\n", encoded, len(encoded))
+				case "base32":
+					encoded = base32.StdEncoding.EncodeToString(blobID)
+					fmt.Printf("  base32:    %s (len: %d)\n", encoded, len(encoded))
+				case "base58":
+					encoded = base58.Encode(blobID)
+					fmt.Printf("  base58:    %s (len: %d)\n", encoded, len(encoded))
+				}
+
+				// Verify our regex will match the encoded blob IDs
+				// Regular expressions for each encoding
+				var regex string
+				switch encoding {
+				case "hex":
+					regex = "5b82(1e|12)[0-9a-fA-F]{64,80}"
+					assert.Regexp(t, regex, encoded, "Hex encoding should match regex")
+				case "base64url":
+					regex = "W4I[A-Za-z0-9_-]{43,60}=*"
+					assert.Regexp(t, regex, encoded, "Base64url encoding should match regex")
+				case "base32":
+					regex = "LOIB[A-Z2-7]{50,90}=*"
+					assert.Regexp(t, regex, encoded, "Base32 encoding should match regex")
+				case "base58":
+					regex = "2[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{40,55}"
+					assert.Regexp(t, regex, encoded, "Base58 encoding should match regex")
+				}
+			}
+			fmt.Println()
+		})
+	}
+
+	// Suggest a comprehensive regex pattern for matching all forms of S5 blob IDs
+	fmt.Println("Recommended regex pattern for S5 blob IDs in different encodings:")
+	fmt.Println("(5b82(1e|12)[0-9a-fA-F]{64,80}|" + // Hex encoding
+		"W4I[A-Za-z0-9_-]{43,60}=*|" + // Base64url encoding
+		"LOIB[A-Z2-7]{50,90}=*|" + // Base32 encoding
+		"2[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{40,55})") // Base58 encoding
+}
