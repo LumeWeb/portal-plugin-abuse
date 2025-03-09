@@ -1,0 +1,292 @@
+openapi: 3.0.0
+info:
+    title: Template Plugin API
+    version: "1.0"
+    description: API for managing items in the template plugin
+paths:
+    /api/items:
+        get:
+            summary: List all items
+            parameters:
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+            responses:
+                '200':
+                    description: Successfully retrieved items
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListItemsResponse'
+                '500':
+                    description: Internal Server Error
+        post:
+            summary: Create a new item
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateItemRequest'
+            responses:
+                '200':
+                    description: Item created successfully
+    
+    /api/items/{id}:
+        get:
+            summary: Get item by ID
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: integer
+            responses:
+                '200':
+                    description: Successfully retrieved item
+        put:
+            summary: Update an item
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: integer
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateItemRequest'
+            responses:
+                '200':
+                    description: Item updated successfully
+        delete:
+            summary: Delete an item
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: integer
+            responses:
+                '200':
+                    description: Item deleted successfully
+    
+    /api/items/search:
+        get:
+            summary: Search items
+            parameters:
+                - name: q
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                '200':
+                    description: Search results
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SearchItemsResponse'
+    
+    /api/items/protected:
+        get:
+            summary: Get protected items (requires authentication)
+            responses:
+                '200':
+                    description: Successfully retrieved protected items
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListItemsResponse'
+                '401':
+                    description: Unauthorized
+                    
+    /api/uploads/{id}:
+        get:
+            summary: Get upload status
+            security:
+                - BearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                  description: Upload ID
+            responses:
+                '200':
+                    description: Successfully retrieved upload status
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UploadStatusResponse'
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: Upload not found
+
+components:
+    schemas:
+        # Base item model
+        Item:
+            type: object
+            description: Represents a single item in the system
+            required:
+                - id
+                - name
+            properties:
+                id:
+                    type: integer
+                    description: Unique identifier for the item
+                    example: 1
+                name:
+                    type: string
+                    description: Name of the item
+                    example: "Example Item"
+                description:
+                    type: string
+                    description: Detailed description of the item
+                    example: "This is an example item description"
+                created_at:
+                    type: string
+                    format: date-time
+                    description: Timestamp when the item was created
+                    example: "2025-03-08T12:00:00Z"
+                updated_at:
+                    type: string
+                    format: date-time
+                    description: Timestamp when the item was last updated
+                    example: "2025-03-08T12:00:00Z"
+                deleted_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    description: Soft delete timestamp, null if not deleted
+                    example: null
+
+        # Response schemas
+        ListItemsResponse:
+            type: object
+            description: Response containing a paginated list of items
+            required:
+                - items
+                - total
+                - page
+                - limit
+            properties:
+                items:
+                    type: array
+                    description: Array of items for the current page
+                    items:
+                        $ref: '#/components/schemas/Item'
+                total:
+                    type: integer
+                    description: Total number of items across all pages
+                    example: 100
+                page:
+                    type: integer
+                    description: Current page number
+                    example: 1
+                limit:
+                    type: integer
+                    description: Number of items per page
+                    example: 10
+
+        CreateItemRequest:
+            type: object
+            description: Request body for creating a new item
+            required:
+                - name
+            properties:
+                name:
+                    type: string
+                    description: Name of the new item
+                    example: "New Item"
+                description:
+                    type: string
+                    description: Description of the new item
+                    example: "Description for the new item"
+
+        UpdateItemRequest:
+            type: object
+            description: Request body for updating an existing item
+            properties:
+                name:
+                    type: string
+                    description: New name for the item
+                    example: "Updated Item Name"
+                description:
+                    type: string
+                    description: New description for the item
+                    example: "Updated item description"
+
+        SearchItemsResponse:
+            type: object
+            description: Response containing search results
+            required:
+                - items
+                - total
+            properties:
+                items:
+                    type: array
+                    description: Array of items matching the search criteria
+                    items:
+                        $ref: '#/components/schemas/Item'
+                total:
+                    type: integer
+                    description: Total number of matching items
+                    example: 5
+
+        UploadState:
+            type: object
+            description: Current state of an upload operation
+            required:
+                - id
+                - size
+                - uploaded
+                - started
+                - completed
+                - hash
+            properties:
+                id:
+                    type: string
+                    description: Unique identifier for the upload
+                    example: "123"
+                size:
+                    type: integer
+                    format: int64
+                    description: Total size of the upload in bytes
+                    example: 1048576
+                uploaded:
+                    type: integer
+                    format: int64
+                    description: Number of bytes uploaded so far
+                    example: 524288
+                started:
+                    type: string
+                    format: date-time
+                    description: When the upload started
+                    example: "2025-03-08T12:00:00Z"
+                completed:
+                    type: boolean
+                    description: Whether the upload is complete
+                    example: false
+                hash:
+                    type: string
+                    description: Content hash in base58 format
+                    example: "QmX4zdJ6..."
+
+        UploadStatusResponse:
+            type: object
+            description: Response containing upload status
+            required:
+                - state
+            properties:
+                state:
+                    $ref: '#/components/schemas/UploadState'
