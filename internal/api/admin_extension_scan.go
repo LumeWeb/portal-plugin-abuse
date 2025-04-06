@@ -2,237 +2,336 @@ package api
 
 import (
 	"errors"
-	"fmt"
-	"github.com/gorilla/mux"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db"
+	"net/http"
+	"strconv"
+
+	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/httputil"
+	"go.lumeweb.com/portal-middleware/auth/jwt"
 	"go.lumeweb.com/portal-plugin-abuse/internal/api/dto"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
-	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
+	"go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/core"
 	"go.lumeweb.com/queryutil"
 	queryutilHttp "go.lumeweb.com/queryutil/http"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"net/http"
-	"strconv"
 )
 
-// registerScanHandlers registers all scan-related route handlers
-func (e *AdminExtension) registerScanHandlers(router *mux.Router, accessSvc core.AccessService) error {
-	routes := []struct {
-		Path    string
-		Method  string
-		Handler http.HandlerFunc
-		Access  string
-	}{
-		{"/cases/{caseId}/scans", "GET", e.listCaseScans, core.ACCESS_ADMIN_ROLE},
-		{"/cases/{caseId}/scans", "POST", e.createScanRequest, core.ACCESS_ADMIN_ROLE},
-		{"/cases/{caseId}/scans/{scanId}", "GET", e.getScan, core.ACCESS_ADMIN_ROLE},
-		{"/cases/{caseId}/scans/{scanId}/results", "GET", e.getScanResults, core.ACCESS_ADMIN_ROLE},
-	}
+// registerScanHandlers registers all scan-related route handlers using portal-router.
+func (e *AdminExtension) registerScanHandlers(gRouter router.Router, accessSvc core.AccessService) error {
+	scanSchema := queryutil.NewSchemaProvider().ForType(dto.ScanResponse{})
+	scanResultSchema := queryutil.NewSchemaProvider().ForType(dto.ScanResultResponse{})
 
-	for _, route := range routes {
-		router.HandleFunc(route.Path, route.Handler).Methods(route.Method)
-		if err := accessSvc.RegisterRoute("admin", "/admin/abuse"+route.Path, route.Method, route.Access); err != nil {
-			return fmt.Errorf("failed to register route %s: %w", route.Path, err)
-		}
-	}
+	routes := router.DefineRoutes(
+		// List Case Scans
+		router.NewRoute(http.MethodGet, "/cases/:caseId/scans", e.listCaseScans,
+			router.WithAccess(core.ACCESS_ADMIN_ROLE),
+			router.WithSwagger(
+				router.WithListEndpoint(
+					"List case scans",
+					"Retrieve a list of scans for a specific case",
+					jwt.PurposeLogin, // Assuming admin endpoints use login JWT
+					dto.ScanResponse{},
+					scanSchema, // Use schema for pagination/sorting/filtering
+					scanSchema.SortableFields(),
+					nil, // No specific filter params defined in original mux code, rely on schema
+					router.WithFilterParamsFromSchema(scanSchema),
+					router.WithPathParam("caseId", "Case ID", 1),
+					router.WithErrorResponses(
+						router.DefineSwaggerErrorResponses(
+							router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid case ID format or filter parameters"),
+							router.DefineSwaggerErrorResponse(http.StatusNotFound, "Case not found"), // Assuming case ID validation happens
+						),
+					),
+				),
+				router.WithSuccessResponse(http.StatusOK, "List of scans", router.WithTotalCountHeader()),
+			),
+		),
 
-	return nil
+		// Create Scan Request for Case Subject
+		router.NewRoute(http.MethodPost, "/cases/:caseId/scans", e.createScanRequest,
+			router.WithAccess(core.ACCESS_ADMIN_ROLE),
+			router.WithSwagger(
+				router.WithSummary("Create scan request for case subject"),
+				router.WithDescription("Initiates a scan for the subject associated with the case."),
+				router.WithTags("Scans"),
+				router.WithPathParam("caseId", "Case ID", 1),
+				router.WithRequestBody(&dto.ManualScanRequest{}, "Manual scan request details", true),
+				router.WithSuccessResponse(
+					http.StatusAccepted,
+					"Scan initiated successfully",
+					router.WithJSONContent(map[string]string{"message": "Scan request accepted"}),
+				),
+				router.WithErrorResponses(
+					router.DefineSwaggerErrorResponses(
+						router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid request payload or case ID format"),
+						router.DefineSwaggerErrorResponse(http.StatusNotFound, "Case not found"),
+						router.DefineSwaggerErrorResponse(http.StatusUnprocessableEntity, "Validation Error"),
+					),
+				),
+			),
+		),
+
+		// Get Scan
+		router.NewRoute(http.MethodGet, "/cases/:caseId/scans/:scanId", e.getScan,
+			router.WithAccess(core.ACCESS_ADMIN_ROLE),
+			router.WithSwagger(
+				router.WithSummary("Get scan"),
+				router.WithDescription("Retrieve details of a specific scan"),
+				router.WithTags("Scans"),
+				router.WithPathParam("caseId", "Case ID", 1),
+				router.WithPathParam("scanId", "Scan ID", 1),
+				router.WithSuccessResponse(
+					http.StatusOK,
+					"Scan details",
+					router.WithJSONContent(dto.ScanResponse{}),
+				),
+				router.WithErrorResponses(
+					router.DefineSwaggerErrorResponses(
+						router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid scan ID format"),
+						router.DefineSwaggerErrorResponse(http.StatusNotFound, "Scan not found"),
+					),
+				),
+			),
+		),
+
+		// Get Scan Results
+		router.NewRoute(http.MethodGet, "/cases/:caseId/scans/:scanId/results", e.getScanResults,
+			router.WithAccess(core.ACCESS_ADMIN_ROLE),
+			router.WithSwagger(
+				router.WithListEndpoint( // Use WithListEndpoint for scan results
+					"Get scan results",
+					"Retrieve results of a specific scan with filtering, sorting, and pagination",
+					jwt.PurposeLogin, // Assuming admin endpoints use login JWT
+					dto.ScanResultResponse{},
+					scanResultSchema, // Use scanResultSchema for parameters and response structure
+					scanResultSchema.SortableFields(),
+					nil, // No specific filter params defined, rely on schema
+					router.WithFilterParamsFromSchema(scanResultSchema),
+					router.WithPathParam("caseId", "Case ID", 1),
+					router.WithPathParam("scanId", "Scan ID", 1),
+					router.WithErrorResponses(
+						router.DefineSwaggerErrorResponses(
+							router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid scan ID format or filter parameters"),
+							router.DefineSwaggerErrorResponse(http.StatusNotFound, "Scan not found"),
+						),
+					),
+				),
+				router.WithSuccessResponse(http.StatusOK, "Scan results", router.WithTotalCountHeader()), // Add total count header
+			),
+		),
+	)
+
+	// Register routes with the router and access service
+	// The base path for this extension is "/abuse", so routes like "/cases/:caseId/scans" become "/abuse/cases/:caseId/scans".
+	// The access service registration needs the full path relative to the admin API root.
+	// core.GetAPI("admin").Subdomain() is "admin", so the full path is "/admin/abuse" + route.Path
+	return router.RegisterRoutes(gRouter, accessSvc, core.GetAPI("admin").Subdomain(), routes, router.WithCors())
 }
 
 // listCaseScans returns all scans for a case using queryutil list API
-func (e *AdminExtension) listCaseScans(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (e *AdminExtension) listCaseScans(c echo.Context) error { // Changed signature to echo.Context
+	ctx := httputil.Context(c) // Wrap Echo context
 
-	// Get case ID from path
-	vars := mux.Vars(r)
-	caseId, err := strconv.ParseUint(vars["caseId"], 10, 32)
+	// Get case ID from path using Echo context
+	caseIdStr := c.Param("caseId")
+	caseId, err := strconv.ParseUint(caseIdStr, 10, 32)
 	if err != nil {
-		sendErrorResponse(&ctx, http.StatusBadRequest, "Invalid case ID format")
-		return
+		return ctx.Error(errors.New("invalid case ID format"), http.StatusBadRequest) // Use ctx.Error
 	}
 
 	// Use injected service
 	if e.caseService == nil {
 		e.logger.Error("Case service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Service unavailable")
-		return
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
+	// Verify case exists
 	if _, err := e.caseService.GetByID(uint(caseId)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendErrorResponse(&ctx, http.StatusNotFound, "Case not found")
+			return ctx.Error(errors.New("case not found"), http.StatusNotFound) // Use ctx.Error
 		} else {
 			e.logger.Error("Failed to fetch case", zap.Error(err))
-			sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to fetch case")
+			return ctx.Error(errors.New("failed to fetch case"), http.StatusInternalServerError) // Use ctx.Error
 		}
-		return
 	}
 
 	// Use injected service
 	if e.scanService == nil {
 		e.logger.Error("Scan service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Service unavailable")
-		return
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
-	// Use standardized list processing
+	// Use standardized list processing with Echo context
 	if err := queryutilHttp.ProcessListRequest(
-		ctx.Response, r,
+		c.Response(), c.Request(), // Pass raw http.ResponseWriter and http.Request
 		"scans",
-		func(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.CaseScan, int64, error) {
+		func(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.CaseScan, int64, error) {
+			// The service method GetScansForCase is expected to handle applying the case ID filter
+			// along with the filters parsed from the request.
 			return e.scanService.GetScansForCase(uint(caseId), pagination)
 		},
 		func(scan models.CaseScan) dto.ScanResponse {
 			var response dto.ScanResponse
 			if err := response.FromModel(&scan); err != nil {
 				e.logger.Error("Failed to convert scan", zap.Error(err))
+				// In a real scenario, you might want to handle this conversion error more gracefully
+				// or log it and return a generic error DTO. For this example, returning an empty DTO.
 				return dto.ScanResponse{}
 			}
 			return response
 		},
 	); err != nil {
 		e.logger.Error("Failed to list scans", zap.Error(err))
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to list scans")
-		return // Added return to prevent fallthrough
+		// queryutilHttp.ProcessListRequest handles writing the error response internally,
+		// but we still return the error for Echo's error handler chain.
+		return err // Return the error from ProcessListRequest
 	}
+
+	return nil // Return nil on success
 }
 
 // createScanRequest initiates a scan for an existing subject
-func (e *AdminExtension) createScanRequest(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (e *AdminExtension) createScanRequest(c echo.Context) error { // Changed signature to echo.Context
+	ctx := httputil.Context(c) // Wrap Echo context
 
-	// Get case ID from path
-	vars := mux.Vars(r)
-	caseId, err := strconv.ParseUint(vars["caseId"], 10, 32)
+	// Get case ID from path using Echo context
+	caseIdStr := c.Param("caseId")
+	caseId, err := strconv.ParseUint(caseIdStr, 10, 32)
 	if err != nil {
-		sendErrorResponse(&ctx, http.StatusBadRequest, "Invalid case ID format")
-		return
+		return ctx.Error(errors.New("invalid case ID format"), http.StatusBadRequest) // Use ctx.Error
 	}
 
-	// Validate request DTO
+	// Validate request DTO using Echo context
 	var req dto.ManualScanRequest
+	// httputil.DecodeAndValidateRequest now takes Echo context
 	if _, ok := httputil.DecodeAndValidateRequest[*models.CaseScan, *dto.ManualScanRequest](ctx, &req); !ok {
-		return
-	}
-	// Use injected service
-	if e.scanService == nil {
-		e.logger.Error("Scan service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Service unavailable")
-		return
+		// Error handled by DecodeAndValidateRequest
+		return nil // Return nil as the error is already handled
 	}
 
-	// Get services
-	caseService := core.GetService[typesSvc.CaseService](e.ctx, typesSvc.CASE_SERVICE)
-	if caseService == nil {
-		e.logger.Error("Case service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Case unavailable")
-		return
+	// Use injected services
+	if e.scanService == nil || e.caseService == nil {
+		e.logger.Error("Required service not available")
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
-	_, err = caseService.GetByID(uint(caseId))
-	if err != nil {
+	// Verify case exists
+	if _, err := e.caseService.GetByID(uint(caseId)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendErrorResponse(&ctx, http.StatusNotFound, "Case not found")
+			return ctx.Error(errors.New("case not found"), http.StatusNotFound) // Use ctx.Error
 		} else {
 			e.logger.Error("Failed to fetch case", zap.Error(err))
-			sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to fetch case")
+			return ctx.Error(errors.New("failed to fetch case"), http.StatusInternalServerError) // Use ctx.Error
 		}
-		return
 	}
 
 	// Create scan request
 	if err := e.scanService.CreateScanRequest(uint(caseId)); err != nil {
 		e.logger.Error("Failed to create scan request", zap.Error(err))
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to initiate scan")
-		return
+		return ctx.Error(errors.New("failed to initiate scan"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
-	ctx.Response.WriteHeader(http.StatusAccepted)
-
+	// Send success response using Echo context
+	return c.JSON(http.StatusAccepted, map[string]string{"message": "Scan request accepted"})
 }
 
 // getScan retrieves a specific scan by ID
-func (e *AdminExtension) getScan(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (e *AdminExtension) getScan(c echo.Context) error { // Changed signature to echo.Context
+	ctx := httputil.Context(c) // Wrap Echo context
 
 	// Use injected service
 	if e.scanService == nil {
 		e.logger.Error("Scan service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Service unavailable")
-		return
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
-	// Extract  caseId and scanId from path
-	vars := mux.Vars(r)
-	scanId, err := strconv.ParseUint(vars["scanId"], 10, 32)
-
+	// Extract scanId from path using Echo context
+	scanIdStr := c.Param("scanId")
+	scanId, err := strconv.ParseUint(scanIdStr, 10, 32)
 	if err != nil {
-		sendErrorResponse(&ctx, http.StatusBadRequest, "Invalid scan ID format")
-		return
+		return ctx.Error(errors.New("invalid scan ID format"), http.StatusBadRequest) // Use ctx.Error
 	}
 
 	// Get the scan using the service
 	scan, err := e.scanService.GetScanById(uint(scanId))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendErrorResponse(&ctx, http.StatusNotFound, "Scan not found")
+		if errors.Is(err, db.ErrRecordNotFound) {
+			return ctx.Error(errors.New("scan not found"), http.StatusNotFound) // Use ctx.Error
 		} else {
 			e.logger.Error("Failed to fetch scan", zap.Error(err))
-			sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to fetch scan")
+			return ctx.Error(errors.New("failed to fetch scan"), http.StatusInternalServerError) // Use ctx.Error
 		}
-		return
 	}
 
 	// Prepare and send response
 	var responseDto dto.ScanResponse
+	// Use httputil.EncodeResponse for encoding
 	if err := httputil.EncodeResponse[*models.CaseScan, *dto.ScanResponse](ctx, scan, &responseDto); err != nil {
 		e.logger.Error("Failed to encode response", zap.Error(err))
+		return err // httputil.EncodeResponse returns an error
 	}
+
+	return nil // Return nil on success
 }
 
 // getScanResults returns results for a specific scan
-func (e *AdminExtension) getScanResults(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (e *AdminExtension) getScanResults(c echo.Context) error { // Changed signature to echo.Context
+	ctx := httputil.Context(c) // Wrap Echo context
 
 	// Use injected service
 	if e.scanService == nil {
 		e.logger.Error("Scan service not available")
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Service unavailable")
-		return
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError) // Use ctx.Error
 	}
 
-	// Extract scanId from path
-	vars := mux.Vars(r)
-	scanId, err := strconv.ParseUint(vars["scanId"], 10, 32)
-
+	// Extract scanId from path using Echo context
+	scanIdStr := c.Param("scanId")
+	scanId, err := strconv.ParseUint(scanIdStr, 10, 32)
 	if err != nil {
-		sendErrorResponse(&ctx, http.StatusBadRequest, "Invalid scan ID format")
-		return
+		return ctx.Error(errors.New("invalid scan ID format"), http.StatusBadRequest) // Use ctx.Error
 	}
 
-	// Use standardized list processing for scan results
+	// Use standardized list processing with Echo context
+	// ProcessListRequest will parse filters, sorts, and pagination from the request
 	if err := queryutilHttp.ProcessListRequest(
-		ctx.Response, r,
+		c.Response(), c.Request(), // Pass raw http.ResponseWriter and http.Request
 		"scan_results",
-		func(_ []queryutil.Filter, _ []queryutil.Sort, _ queryutil.Pagination) ([]*core.ScanResult, int64, error) {
-			results, err := e.scanService.GetScanResults(uint(scanId))
+		func(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]*core.ScanResult, int64, error) {
+			// Call the updated service method with all parameters
+			results, total, err := e.scanService.GetScanResults(uint(scanId), filters, sorts, pagination)
 			if err != nil {
+				// Check for not found specifically for the scan itself
+				if errors.Is(err, db.ErrRecordNotFound) {
+					// Return a specific error that ProcessListRequest can map to 404
+					return nil, 0, gorm.ErrRecordNotFound
+				}
 				return nil, 0, err
 			}
-			return results, 0, nil
+			return results, total, nil
 		},
 		func(result *core.ScanResult) dto.ScanResultResponse {
 			var response dto.ScanResultResponse
 			if err := response.FromModel(result); err != nil {
 				e.logger.Error("Failed to convert scan result", zap.Error(err))
+				// In a real scenario, you might want to handle this conversion error more gracefully
+				// or log it and return a generic error DTO. For this example, returning an empty DTO.
 				return dto.ScanResultResponse{}
 			}
 			return response
 		},
 	); err != nil {
 		e.logger.Error("Failed to list scan results", zap.Error(err))
-		sendErrorResponse(&ctx, http.StatusInternalServerError, "Failed to list scan results")
+		// queryutilHttp.ProcessListRequest handles writing the error response internally,
+		// but we still return the error for Echo's error handler chain.
+		// Check if the error is the "scan not found" error we returned from the data func
+		if err.Error() == "scan not found" {
+			return ctx.Error(errors.New("scan not found"), http.StatusNotFound) // Use ctx.Error for Echo
+		}
+		return err // Return the error from ProcessListRequest
 	}
+
+	return nil // Return nil on success
 }

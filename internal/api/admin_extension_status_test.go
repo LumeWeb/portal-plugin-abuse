@@ -1,188 +1,150 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/portal-plugin-abuse/internal/api/dto"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal-plugin-abuse/internal/service/mocks"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
-	coreMocks "go.lumeweb.com/portal/core/testing/mocks"
+	coreTesting "go.lumeweb.com/portal/core/testing"
 	"gorm.io/gorm"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
 )
 
-func setupAdminStatusTest(t *testing.T) (*AdminExtension, *mocks.MockCaseService, *mux.Router) {
-	ctx, adminExt, _ := setupAdminServices(t)
-	mockCaseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE).(*mocks.MockCaseService)
-	accessSvc := core.GetService[core.AccessService](ctx, core.ACCESS_SERVICE).(*coreMocks.MockAccessService)
-
-	router := mux.NewRouter()
-	abuseRouter := router.PathPrefix("/admin/abuse").Subrouter()
-	err := adminExt.registerStatusUpdateHandlers(abuseRouter, accessSvc)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return adminExt, mockCaseSvc, router
-}
-
 func TestUpdateCaseStatus_Success(t *testing.T) {
-	_, mockCaseSvc, router := setupAdminStatusTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockCaseSvc := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
 
-	// Mock expectations
-	existingCase := &models.Case{
-		Model:  gorm.Model{ID: 1},
-		Status: models.CaseStatusNew,
-	}
-	updatedCase := &models.Case{
-		Model:  gorm.Model{ID: 1},
-		Status: models.CaseStatusInProgress,
-	}
-	// Initial GetByID
-	mockCaseSvc.On("GetByID", uint(1)).Return(existingCase, nil).Once()
+		existingCase := &models.Case{
+			Model:  gorm.Model{ID: 1},
+			Status: models.CaseStatusNew,
+		}
+		updatedCase := &models.Case{
+			Model:  gorm.Model{ID: 1},
+			Status: models.CaseStatusInProgress,
+		}
 
-	// UpdateStatus
-	mockCaseSvc.On("UpdateStatus", uint(1), models.CaseStatusInProgress).Return(nil).
-		Run(func(args mock.Arguments) {
-			// Update the *next* call
-			mockCaseSvc.ExpectedCalls[2].ReturnArguments = mock.Arguments{updatedCase, nil}
+		mockCaseSvc.EXPECT().GetByID(uint(1)).Return(existingCase, nil).Once()
+		mockCaseSvc.EXPECT().UpdateStatus(uint(1), models.CaseStatusInProgress).Return(nil).Once()
+		mockCaseSvc.EXPECT().GetByID(uint(1)).Return(updatedCase, nil).Once()
+		mockCaseSvc.EXPECT().SendStatusUpdateNotification(uint(1), models.CaseStatusNew, models.CaseStatusInProgress).Return(nil).Once()
 
-		}).Once() // ONLY run this ONCE, after call2.
+		reqBody := dto.CaseStatusUpdateRequest{
+			Status: string(models.CaseStatusInProgress),
+		}
+		body, err := json.Marshal(reqBody)
+		require.NoError(tb, err)
 
-	mockCaseSvc.On("GetByID", uint(1)).Return(&updatedCase, nil).Once()
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/1/status", body)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	// SendStatusUpdateNotification
-	mockCaseSvc.On("SendStatusUpdateNotification", uint(1), models.CaseStatusNew, models.CaseStatusInProgress).Return(nil).Once()
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
 
-	reqBody := dto.CaseStatusUpdateRequest{
-		Status: string(models.CaseStatusInProgress),
-	}
-	body, _ := json.Marshal(reqBody)
+		var response dto.CaseStatusResponse
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.Equal(tb, string(models.CaseStatusNew), response.OldStatus)
+		assert.Equal(tb, string(models.CaseStatusInProgress), response.NewStatus)
 
-	req := httptest.NewRequest("PUT", "/admin/abuse/cases/1/status", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response dto.CaseStatusResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, string(models.CaseStatusNew), response.OldStatus)
-	assert.Equal(t, string(models.CaseStatusInProgress), response.NewStatus)
-
-	time.Sleep(1500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
+	})
 }
 
 func TestUpdateCaseStatus_ValidationFailure(t *testing.T) {
-	_, mockCaseSvc, router := setupAdminStatusTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockCaseSvc := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
+		mockCaseSvc.EXPECT().GetByID(uint(1)).Return(&models.Case{
+			Model:  gorm.Model{ID: 1},
+			Status: models.CaseStatusNew,
+		}, nil).Once()
 
-	existingCase := &models.Case{Model: gorm.Model{ID: 1}}
-	mockCaseSvc.On("GetByID", uint(1)).Return(existingCase, nil).Once()
-	// Invalid request - invalid status
-	reqBody := `{"status": "invalid"}`
-	req := httptest.NewRequest("PUT", "/admin/abuse/cases/1/status", bytes.NewReader([]byte(reqBody)))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+		reqBody := `{"status": "invalid"}`
 
-	router.ServeHTTP(w, req)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/1/status", []byte(reqBody))
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		// Assert
+		assert.Equal(tb, http.StatusUnprocessableEntity, w.Code)
+	})
 }
 
 func TestUpdateCaseStatus_NotFound(t *testing.T) {
-	_, mockCaseSvc, router := setupAdminStatusTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockCaseSvc := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
 
-	mockCaseSvc.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
+		mockCaseSvc.EXPECT().GetByID(uint(999)).Return(nil, gorm.ErrRecordNotFound).Once()
 
-	reqBody := dto.CaseStatusUpdateRequest{
-		Status: string(models.CaseStatusInProgress),
-	}
-	body, _ := json.Marshal(reqBody)
+		reqBody := dto.CaseStatusUpdateRequest{
+			Status: string(models.CaseStatusInProgress),
+		}
+		body, err := json.Marshal(reqBody)
+		require.NoError(tb, err)
 
-	req := httptest.NewRequest("PUT", "/admin/abuse/cases/999/status", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/999/status", body)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-func TestUpdateCaseStatus_ServiceError(t *testing.T) {
-	_, mockCaseSvc, router := setupAdminStatusTest(t)
-
-	existingCase := &models.Case{Model: gorm.Model{ID: 1}}
-	mockCaseSvc.On("GetByID", uint(1)).Return(existingCase, nil)
-	mockCaseSvc.On("UpdateStatus", uint(1), models.CaseStatusInProgress).Return(fmt.Errorf("service error"))
-
-	reqBody := dto.CaseStatusUpdateRequest{
-		Status: string(models.CaseStatusInProgress),
-	}
-	body, _ := json.Marshal(reqBody)
-
-	req := httptest.NewRequest("PUT", "/admin/abuse/cases/1/status", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+		// Assert
+		assert.Equal(tb, http.StatusNotFound, w.Code)
+	})
 }
 
 func TestUpdateCaseStatus_NotificationError(t *testing.T) {
-	_, mockCaseSvc, router := setupAdminStatusTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockCaseSvc := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
 
-	existingCase := &models.Case{
-		Model:  gorm.Model{ID: 1},
-		Status: models.CaseStatusNew,
-	}
-	updatedCase := *existingCase
-	updatedCase.Status = models.CaseStatusInProgress
-	// Initial GetByID
-	mockCaseSvc.On("GetByID", uint(1)).Return(existingCase, nil).Once()
+		existingCase := &models.Case{
+			Model:  gorm.Model{ID: 1},
+			Status: models.CaseStatusNew,
+		}
+		updatedCase := &models.Case{
+			Model:  gorm.Model{ID: 1},
+			Status: models.CaseStatusInProgress,
+		}
 
-	// UpdateStatus
-	mockCaseSvc.On("UpdateStatus", uint(1), models.CaseStatusInProgress).Return(nil).
-		Run(func(args mock.Arguments) {
-			// Access and update the second GetByID with updatedCase
+		mockCaseSvc.EXPECT().GetByID(uint(1)).Return(existingCase, nil).Once()
+		mockCaseSvc.EXPECT().UpdateStatus(uint(1), models.CaseStatusInProgress).Return(nil).Once()
+		mockCaseSvc.EXPECT().GetByID(uint(1)).Return(updatedCase, nil).Once()
+		mockCaseSvc.EXPECT().SendStatusUpdateNotification(uint(1), models.CaseStatusNew, models.CaseStatusInProgress).Return(fmt.Errorf("email error")).Once()
 
-			mockCaseSvc.ExpectedCalls[2].ReturnArguments = mock.Arguments{&updatedCase, nil}
+		reqBody := dto.CaseStatusUpdateRequest{
+			Status: string(models.CaseStatusInProgress),
+		}
+		body, err := json.Marshal(reqBody)
+		require.NoError(tb, err)
 
-		}).Once() // ONLY run this ONCE, after call2.
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/1/status", body)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	mockCaseSvc.On("GetByID", uint(1)).Return(&updatedCase, nil).Once()
-	// SendStatusUpdateNotification
-	mockCaseSvc.On("SendStatusUpdateNotification", uint(1), models.CaseStatusNew, models.CaseStatusInProgress).Return(fmt.Errorf("email error")).Once()
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
 
-	reqBody := dto.CaseStatusUpdateRequest{
-		Status: string(models.CaseStatusInProgress),
-	}
-	body, _ := json.Marshal(reqBody)
+		var response dto.CaseStatusResponse
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.Equal(tb, string(models.CaseStatusNew), response.OldStatus)
+		assert.Equal(tb, string(models.CaseStatusInProgress), response.NewStatus)
 
-	req := httptest.NewRequest("PUT", "/admin/abuse/cases/1/status", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	// Notification failure shouldn't affect the response status
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response dto.CaseStatusResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, string(models.CaseStatusInProgress), response.NewStatus)
-
-	time.Sleep(1500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
+	})
 }

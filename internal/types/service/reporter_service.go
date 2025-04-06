@@ -20,7 +20,7 @@ type ReporterService interface {
 	GetByEmail(email string) (*models.Reporter, error)
 
 	// List returns a list of reporters with filtering and pagination
-	List(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Reporter, int64, error)
+	List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Reporter, int64, error)
 
 	// Update updates a reporter
 	Update(reporter *models.Reporter) error

@@ -1,27 +1,42 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
-	svcTypes "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
+	gjwt "github.com/golang-jwt/jwt/v5"
+	"go.lumeweb.com/gswagger"
+	"go.lumeweb.com/portal-middleware/middleware"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/queryutil"
-	queryutilHttp "go.lumeweb.com/queryutil/http"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/httputil"
+	"go.lumeweb.com/portal-middleware/auth"
+	"go.lumeweb.com/portal-middleware/auth/adapter"
+	"go.lumeweb.com/portal-middleware/auth/jwt"
+	"go.lumeweb.com/portal-middleware/cors"
+	"go.lumeweb.com/portal-plugin-abuse/internal/api/dto"
+	pluginConfig "go.lumeweb.com/portal-plugin-abuse/internal/config"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
+	pjwt "go.lumeweb.com/portal-plugin-abuse/internal/types/jwt"
+	tjwt "go.lumeweb.com/portal-plugin-abuse/internal/types/jwt"
+	svcTypes "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
+	"go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
+)
 
-	"go.lumeweb.com/portal-plugin-abuse/internal/api/dto"
-	pluginConfig "go.lumeweb.com/portal-plugin-abuse/internal/config"
-	"go.lumeweb.com/portal-plugin-abuse/internal/validation"
+type contextKey string
+
+const (
+	contextKeyCaseID     contextKey = "caseID"
+	contextKeyReporterID contextKey = "reporterID"
 )
 
 // AbuseAPI handles abuse report endpoints
@@ -31,6 +46,15 @@ type AbuseAPI struct {
 	abuseReportService svcTypes.AbuseReportService
 	emailService       svcTypes.EmailService
 	tokenSvc           svcTypes.TokenService
+}
+
+// caseToResponseModel converts a Case model to a AbuseReportResponseModel with auth token and expiration
+func caseToResponseModel(caseModel *models.Case, token string, expiresAt time.Time) *dto.AbuseReportResponseModel {
+	return &dto.AbuseReportResponseModel{
+		Case:        caseModel,
+		AccessToken: token,
+		ExpiresAt:   expiresAt,
+	}
 }
 
 // NewAbuseAPI creates a new instance of AbuseAPI
@@ -53,7 +77,7 @@ func NewAbuseAPI() (core.API, []core.ContextBuilderOption, error) {
 				return fmt.Errorf("email service not available")
 			}
 
-			api.tokenSvc = core.GetService[svcTypes.TokenService](ctx, "abuse.token_service")
+			api.tokenSvc = core.GetService[svcTypes.TokenService](ctx, svcTypes.TOKEN_SERVICE)
 			if api.tokenSvc == nil {
 				return fmt.Errorf("token service not available")
 			}
@@ -72,28 +96,159 @@ func (a *AbuseAPI) Name() string {
 
 // Subdomain returns the API subdomain
 func (a *AbuseAPI) Subdomain() string {
-	return ""
+	return "abuse"
+}
+
+// OpenAPIInfo returns the OpenAPI information for this API
+func (a *AbuseAPI) OpenAPIInfo() router.APIInfoDefinition {
+	return router.APIInfo().
+		Title("Abuse Report API").
+		Description("Public API for user submission and tracking of abuse reports.")
 }
 
 // Configure sets up the API routes
-func (a *AbuseAPI) Configure(router *mux.Router, _ core.AccessService) error {
-	// Create a subrouter for abuse API endpoints
-	abuseRouter := router.PathPrefix("/api/abuse").Subrouter()
+func (a *AbuseAPI) Configure(r router.Router, accessSvc core.AccessService) error {
+	// Setup static file serving
+	router.MustDefaultStaticEnvSetup(r, "ABUSE_REPORT_APP_BUNDLE_PATH")
 
-	// Register routes
-	abuseRouter.HandleFunc("/report", a.submitReport).Methods(http.MethodPost)
-	abuseRouter.HandleFunc("/report/{confirmationNumber}", a.getReportStatus).Methods(http.MethodGet)
+	// Create an API group
+	apiGroup, err := r.Group("/api")
+	if err != nil {
+		return fmt.Errorf("failed to create api group: %w", err)
+	}
 
-	// Token-protected endpoints
-	protectedRouter := abuseRouter.PathPrefix("/cases").Subrouter()
-	protectedRouter.Use(a.tokenMiddleware)
-	protectedRouter.HandleFunc("/{reference}", a.getCase).Methods("GET")
-	protectedRouter.HandleFunc("/{reference}/comment", a.addComment).Methods("POST")
-	protectedRouter.HandleFunc("/{reference}/upload", a.uploadFile).Methods("POST")
+	// Apply common middleware to the API group
+	apiGroup.Use(
+		echo.WrapMiddleware(cors.NewWithDefaults(cors.Config{})),
+	)
 
-	// Token management
-	abuseRouter.HandleFunc("/tokens/validate", a.validateToken).Methods("POST")
-	abuseRouter.HandleFunc("/tokens/refresh", a.refreshToken).Methods("POST")
+	// Define routes using portal-router.RouteDefinition
+	routes := router.DefineRoutes(
+		// Public Endpoints
+		router.NewRoute(http.MethodPost, "/reports", a.submitReport,
+			router.WithSwagger(
+				router.WithSummary("Submit a new abuse report"),
+				router.WithDescription("Allows users to submit a new abuse report with details and attachments."),
+				router.WithRequestBody(&dto.AbuseReportRequest{}, "Abuse report details", true),
+				router.WithSuccessResponse(http.StatusCreated, "Report submitted successfully",
+					router.WithJSONContent(&dto.AbuseReportResponse{}),
+				),
+
+				router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+					router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid request payload"),
+					router.DefineSwaggerErrorResponse(http.StatusInternalServerError, "Internal server error"),
+				)),
+			),
+		),
+
+		// Token Management
+		router.NewRoute(http.MethodPost, "/tokens/validate", a.validateToken,
+			router.WithSwagger(
+				router.WithSummary("Validate an abuse report access token"),
+				router.WithDescription("Checks if a given access token is valid and returns the associated case reference."),
+				router.WithRequestBody(&dto.TokenRefreshRequest{}, "Token validation request", true),
+				router.WithSuccessResponse(http.StatusOK, "Token is valid",
+					router.WithJSONContent(&dto.ValidateTokenResponse{}),
+				),
+				router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+					router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid request payload"),
+					router.DefineSwaggerErrorResponse(http.StatusUnauthorized, "Invalid or expired token"),
+					router.DefineSwaggerErrorResponse(http.StatusInternalServerError, "Internal server error"),
+				)),
+			),
+		),
+		router.NewRoute(http.MethodPost, "/tokens/refresh", a.refreshToken,
+			router.WithSwagger(
+				router.WithSummary("Refresh an abuse report access token"),
+				router.WithDescription("Refreshes an existing access token, returning a new token with extended validity."),
+				router.WithRequestBody(&dto.TokenRefreshRequest{}, "Token refresh request", true),
+				router.WithSuccessResponse(http.StatusOK, "Token refreshed successfully",
+					router.WithJSONContent(&dto.TokenRefreshResponse{}),
+				),
+				router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+					router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid request payload"),
+					router.DefineSwaggerErrorResponse(http.StatusUnauthorized, "Invalid access token"),
+					router.DefineSwaggerErrorResponse(http.StatusInternalServerError, "Internal server error"),
+				)),
+			),
+		),
+		router.NewRoute(http.MethodPost, "/tokens/jwt", a.exchangeToken,
+			router.WithSwagger(
+				router.WithSummary("Exchange access token for JWT"),
+				router.WithDescription("Exchanges a valid abuse report access token for a JWT, setting an authentication cookie."),
+				router.WithRequestBody(&dto.TokenRefreshRequest{}, "Token exchange request", true),
+				router.WithSuccessResponse(http.StatusOK, "JWT generated and cookie set",
+					router.WithJSONContent(&dto.JWTResponse{}),
+				),
+				router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+					router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid request payload"),
+					router.DefineSwaggerErrorResponse(http.StatusUnauthorized, "Invalid access token"),
+					router.DefineSwaggerErrorResponse(http.StatusInternalServerError, "Internal server error"),
+				)),
+			),
+		),
+	)
+
+	// Register public routes
+	if err := router.RegisterRoutes(apiGroup, accessSvc, a.Subdomain(), routes, router.WithCors()); err != nil {
+		return fmt.Errorf("failed to register public routes: %w", err)
+	}
+
+	// JWT-protected endpoints group
+	protectedGroup, err := apiGroup.Group("/cases")
+	if err != nil {
+		return fmt.Errorf("failed to create protected group: %w", err)
+	}
+
+	protectedRoutes := router.DefineRoutes(
+		router.NewRoute(http.MethodGet, "/:reference", a.getCase,
+			router.WithSwagger(
+				router.WithSummary("Get abuse case details"),
+				router.WithDescription("Retrieves the details of a specific abuse case, including communications, scans, and evidence."),
+				router.WithPathParam("reference", "The case reference number", "string"),
+				router.WithSuccessResponse(http.StatusOK, "Case details retrieved successfully",
+					router.WithJSONContent(&dto.PublicCaseResponse{}),
+				),
+				router.WithErrorResponses(make(map[int]swagger.ContentValue)),
+			),
+		),
+		router.NewRoute(http.MethodPost, "/:reference/communications", a.addComment,
+			router.WithSwagger(
+				router.WithSummary("Add a comment to an abuse case"),
+				router.WithDescription("Adds a new communication (comment) to a specific abuse case."),
+				router.WithPathParam("reference", "The case reference number", "string"),
+				router.WithRequestBody(struct{ Content string }{}, "Comment content", true),
+				router.WithSuccessResponse(http.StatusCreated, "Comment added successfully",
+					router.WithJSONContent(&dto.CommunicationResponse{}),
+				),
+			),
+		),
+		router.NewRoute(http.MethodPost, "/:reference/attachments", a.uploadFile,
+			router.WithSwagger(
+				router.WithSummary("Upload an attachment to an abuse case"),
+				router.WithDescription("Uploads a file attachment as evidence for a specific abuse case."),
+				router.WithPathParam("reference", "The case reference number", "string"),
+				// Use WithFileUpload instead of WithRequestBody
+				router.WithFileUpload("File upload", true),
+				router.WithSuccessResponse(http.StatusCreated, "File uploaded successfully",
+					router.WithJSONContent(&dto.AttachmentUploadResponse{}),
+				),
+				// Add default error responses if not already covered by WithSwagger defaults
+				router.WithErrorResponses(make(map[int]swagger.ContentValue)), // Or specific errors if needed
+			),
+		),
+	)
+
+	// Register protected routes
+	if err := router.RegisterRoutes(protectedGroup, accessSvc, a.Subdomain(), protectedRoutes, router.WithMiddlewares(middleware.AuthMiddleware(
+		a.ctx,
+		jwt.PurposeLogin,
+		middleware.WithAuthEmptyAllowed(false),
+		middleware.WithAuthJWTOptions(jwt.WithClaims(pjwt.NewAbuseJWTClaims(0, 0))),
+	),
+		caseIDMiddleware()), router.WithCors()); err != nil {
+		return fmt.Errorf("failed to register protected routes: %w", err)
+	}
 
 	return nil
 }
@@ -111,204 +266,166 @@ func (a *AbuseAPI) Config() config.APIConfig {
 }
 
 // submitReport handles the submission of a new abuse report
-func (a *AbuseAPI) submitReport(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (a *AbuseAPI) submitReport(c echo.Context) error {
+	ctx := httputil.Context(c)
 
-	// Use the proper DTO instead of an anonymous struct
 	var requestDto dto.AbuseReportRequest
 
-	// Validate the request using Zog
 	caseModel, ok := httputil.DecodeAndValidateRequest[*models.Case, *dto.AbuseReportRequest](ctx, &requestDto)
 	if !ok {
-		return
+		return nil // Error handled by DecodeAndValidateRequest
 	}
 
-	// Submit report
-	caseModel, err := a.abuseReportService.SubmitReport(r.Context(), caseModel)
+	caseModel, err := a.abuseReportService.SubmitReport(c.Request().Context(), caseModel)
 	if err != nil {
 		a.logger.Error("Failed to submit report", zap.Error(err))
-		sendErrorResponse(&ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to submit report: %v", err))
-		return
+		return ctx.Error(fmt.Errorf("failed to submit report: %w", err), http.StatusInternalServerError)
 	}
+
+	token, expiresAt, err := a.tokenSvc.GenerateToken(caseModel.ID, caseModel.ReporterID, 90)
+	if err != nil {
+		a.logger.Error("Failed to generate access token", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to generate access credentials: %w", err), http.StatusInternalServerError)
+	}
+
+	responseDtoModel := caseToResponseModel(caseModel, token, expiresAt)
 
 	var responseDto dto.AbuseReportResponse
 
-	ctx.Response.WriteHeader(http.StatusCreated)
-	err = httputil.EncodeResponse[*models.Case, *dto.AbuseReportResponse](ctx, caseModel, &responseDto)
-	if err != nil {
-		a.logger.Error("Failed to submit report", zap.Error(err))
+	c.Response().WriteHeader(http.StatusCreated)
+	if err := httputil.EncodeResponse[*dto.AbuseReportResponseModel](ctx, responseDtoModel, &responseDto); err != nil {
+		a.logger.Error("Failed to encode response", zap.Error(err))
+		return err // httputil.EncodeResponse returns an error
 	}
-}
 
-// getReportStatus handles retrieving the status of a report
-func (a *AbuseAPI) tokenMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := httputil.Context(r, w)
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if token == "" {
-			token = r.URL.Query().Get("token")
-		}
-
-		caseID, reporterID, valid := a.tokenSvc.ValidateToken(token)
-		if !valid {
-			sendErrorResponse(&ctx, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-
-		// Store IDs in context
-		hctx := context.WithValue(r.Context(), "caseID", caseID)
-		hctx = context.WithValue(ctx, "reporterID", reporterID)
-		next.ServeHTTP(w, r.WithContext(hctx))
-	})
+	return nil
 }
 
 // getCase handles GET /cases/{reference}
-func (a *AbuseAPI) getCase(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
-	vars := mux.Vars(r)
-	reference := vars["reference"]
+func (a *AbuseAPI) getCase(c echo.Context) error {
+	ctx := httputil.Context(c)
+	reference := c.Param("reference")
 
-	// Get the validated case and reporter IDs from the context
-	caseID, _ := r.Context().Value("caseID").(uint)
-	reporterID, _ := r.Context().Value("reporterID").(uint)
+	caseID, _ := c.Request().Context().Value(contextKeyCaseID).(uint)
+	reporterID, _ := c.Request().Context().Value(contextKeyReporterID).(uint)
 
-	// Get the case service from context
 	caseService := core.GetService[svcTypes.CaseService](a.ctx, svcTypes.CASE_SERVICE)
+	if caseService == nil {
+		return ctx.Error(fmt.Errorf("case service not available"), http.StatusInternalServerError)
+	}
 
-	// Get the case by ID
 	caseModel, err := caseService.GetByID(caseID)
 	if err != nil {
 		a.logger.Error("Failed to get case", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
-		return
+		if err == db.ErrRecordNotFound {
+			return ctx.Error(fmt.Errorf("case not found"), http.StatusNotFound)
+		}
+		return ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
 	}
 
-	// Verify that the reference number matches
 	if caseModel.ReferenceNumber != reference {
-		_ = ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
 	}
 
-	// Verify that the reporter ID matches
 	if caseModel.ReporterID != reporterID {
-		_ = ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
 	}
 
-	// Get communications using queryutil helper
-	var commDTOs []dto.CommunicationResponse
-	if err := queryutilHttp.ProcessListRequest(
-		ctx.Response, r,
-		"communications",
-		func(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Communication, int64, error) {
-			// Add filter for only outgoing/external communications
-			// Add separate filters for each direction we want to include
-			filters = append(filters, queryutil.Filter{
-				Field:    "direction",
-				Operator: queryutil.OperatorEquals,
-				Value:    string(models.CommunicationDirectionOutgoing),
-			})
-			filters = append(filters, queryutil.Filter{
-				Field:    "direction",
-				Operator: queryutil.OperatorEquals,
-				Value:    string(models.CommunicationDirectionExternal),
-			})
-			return core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE).
-				ListByCaseID(caseID, filters, sorts, pagination)
-		},
-		func(comm models.Communication) dto.CommunicationResponse {
-			var dtoComm dto.CommunicationResponse
-			if err := dtoComm.FromModel(&comm); err != nil {
-				a.logger.Error("Failed to convert communication", zap.Error(err))
-				return dto.CommunicationResponse{}
-			}
-			return dtoComm
-		},
-	); err != nil {
-		a.logger.Error("Failed to process communications", zap.Error(err))
+	commService := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE)
+	if commService == nil {
+		a.logger.Error("Communication service not available")
+		// Continue without communications if service is missing, or return error?
+		// Returning error for now for clarity.
+		return ctx.Error(fmt.Errorf("communication service not available"), http.StatusInternalServerError)
 	}
 
-	// Get scans for the case
+	comms, _, err := commService.ListByCaseID(caseID, []queryutil.CrudFilter{
+		queryutil.Or(
+			queryutil.StringField("direction").Eq(string(models.CommunicationDirectionOutgoing)),
+			queryutil.StringField("direction").Eq(string(models.CommunicationDirectionExternal)),
+		),
+	}, nil, queryutil.Pagination{})
+	if err != nil {
+		a.logger.Error("Failed to get communications", zap.Error(err))
+		// Decide if this is a fatal error or if we can return the case without comms
+		// Returning error for now.
+		return ctx.Error(fmt.Errorf("failed to get communications: %w", err), http.StatusInternalServerError)
+	}
+
 	scanService := core.GetService[svcTypes.ScanService](a.ctx, svcTypes.SCAN_SERVICE)
-	scans, _, err := scanService.GetScansForCase(caseID, defaultPagination())
+	if scanService == nil {
+		a.logger.Error("Scan service not available")
+		// Decide if this is a fatal error
+		return ctx.Error(fmt.Errorf("scan service not available"), http.StatusInternalServerError)
+	}
+	scans, _, err := scanService.GetScansForCase(caseID, queryutil.Pagination{})
 	if err != nil {
 		a.logger.Error("Failed to get scans", zap.Error(err))
-		// Not a critical error, continue with empty scans
+		return ctx.Error(fmt.Errorf("failed to get scans: %w", err), http.StatusInternalServerError)
 	}
 
-	publicScans := make([]dto.ScanResponse, len(scans))
-	for i, scan := range scans {
-		var scanDTO dto.ScanResponse
-		if err := scanDTO.FromModel(&scan); err != nil {
-			a.logger.Error("Failed to convert scan", zap.Error(err))
-			continue
-		}
-		publicScans[i] = scanDTO
+	evidenceService := core.GetService[svcTypes.EvidenceService](a.ctx, svcTypes.EVIDENCE_SERVICE)
+	if evidenceService == nil {
+		a.logger.Error("Evidence service not available")
+		return ctx.Error(fmt.Errorf("evidence service not available"), http.StatusInternalServerError)
+	}
+	evidences, _, err := evidenceService.GetByCaseID(caseID, queryutil.Pagination{})
+	if err != nil {
+		a.logger.Error("Failed to get evidence", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to get evidence: %w", err), http.StatusInternalServerError)
 	}
 
-	// Build response using existing DTO
-	response := dto.CaseResponse{
-		BaseResponse: dto.BaseResponse{
-			ID:        caseModel.ID,
-			CreatedAt: caseModel.CreatedAt,
-			UpdatedAt: caseModel.UpdatedAt,
-		},
-		ReferenceNumber: caseModel.ReferenceNumber,
-		Type:            string(caseModel.Type),
-		Status:          string(caseModel.Status),
-		Description:     caseModel.Description,
-		Priority:        string(caseModel.Priority),
-		Source:          string(caseModel.Source),
-		NeedsReview:     caseModel.NeedsReview,
-		ReporterID:      caseModel.ReporterID,
-		SubjectID:       caseModel.SubjectID,
-		Communications:  commDTOs,
-		Scans:           publicScans,
+	caseModel.Communications = comms
+	caseModel.CaseScans = scans
+	caseModel.Evidence = evidences
+
+	var response dto.PublicCaseResponse
+	if err := response.FromModel(caseModel); err != nil {
+		a.logger.Error("Failed to convert case model", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to process case data: %w", err), http.StatusInternalServerError)
 	}
 
-	ctx.Encode(response)
+	if err := httputil.EncodeResponse[*models.Case](ctx, caseModel, &response); err != nil {
+		a.logger.Error("Failed to encode response", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 // addComment handles POST /cases/{reference}/comment
-func (a *AbuseAPI) addComment(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
-	vars := mux.Vars(r)
-	reference := vars["reference"]
+func (a *AbuseAPI) addComment(c echo.Context) error {
+	ctx := httputil.Context(c)
+	reference := c.Param("reference")
 
-	// Get the validated case and reporter IDs from the context
-	caseID, _ := r.Context().Value("caseID").(uint)
-	reporterID, _ := r.Context().Value("reporterID").(uint)
+	caseID, _ := c.Request().Context().Value(contextKeyCaseID).(uint)
+	reporterID, _ := c.Request().Context().Value(contextKeyReporterID).(uint)
 
-	// Parse the request
 	var req struct {
 		Content string `json:"content"`
 	}
 	if err := ctx.Decode(&req); err != nil {
-		return
+		return nil // Error handled by ctx.Decode
 	}
 
-	// Get case service
 	caseService := core.GetService[svcTypes.CaseService](a.ctx, svcTypes.CASE_SERVICE)
+	if caseService == nil {
+		return ctx.Error(fmt.Errorf("case service not available"), http.StatusInternalServerError)
+	}
 	caseModel, err := caseService.GetByID(caseID)
 	if err != nil {
 		a.logger.Error("Failed to get case", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
 	}
 
-	// Verify reference match
 	if caseModel.ReferenceNumber != reference {
-		_ = ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
 	}
 
-	// Verify reporter match
 	if caseModel.ReporterID != reporterID {
-		_ = ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
 	}
 
-	// Create communication
 	comm := &models.Communication{
 		CaseID:    caseID,
 		SenderID:  reporterID,
@@ -318,66 +435,60 @@ func (a *AbuseAPI) addComment(w http.ResponseWriter, r *http.Request) {
 		ThreadID:  a.emailService.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber),
 	}
 
-	// Save communication
 	commService := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE)
+	if commService == nil {
+		return ctx.Error(fmt.Errorf("communication service not available"), http.StatusInternalServerError)
+	}
 	created, err := commService.Create(comm)
 	if err != nil {
 		a.logger.Error("Failed to create communication", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to add comment: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to create communication: %w", err), http.StatusInternalServerError)
 	}
 
-	ctx.Response.WriteHeader(http.StatusCreated)
-	ctx.Encode(map[string]interface{}{
-		"id":         created.ID,
-		"type":       string(created.Type),
-		"direction":  string(created.Direction),
-		"content":    created.Content,
-		"created_at": created.CreatedAt.Format(time.RFC3339),
-	})
+	var responseDto dto.CommunicationResponse
+	if err := responseDto.FromModel(created); err != nil {
+		a.logger.Error("Failed to convert communication model", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to process communication data: %w", err), http.StatusInternalServerError)
+	}
+
+	c.Response().WriteHeader(http.StatusCreated)
+	if err := httputil.EncodeResponse[*models.Communication, *dto.CommunicationResponse](ctx, created, &responseDto); err != nil {
+		a.logger.Error("Failed to encode response", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 // uploadFile handles POST /cases/{reference}/upload
-func (a *AbuseAPI) uploadFile(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
-	vars := mux.Vars(r)
-	reference := vars["reference"]
+func (a *AbuseAPI) uploadFile(c echo.Context) error {
+	ctx := httputil.Context(c)
+	reference := c.Param("reference")
 
-	// Get validated IDs from context
-	caseID, _ := r.Context().Value("caseID").(uint)
-	reporterID, _ := r.Context().Value("reporterID").(uint)
+	caseID, _ := c.Request().Context().Value(contextKeyCaseID).(uint)
+	reporterID, _ := c.Request().Context().Value(contextKeyReporterID).(uint)
 
-	// Get case details
 	caseService := core.GetService[svcTypes.CaseService](a.ctx, svcTypes.CASE_SERVICE)
+	if caseService == nil {
+		return ctx.Error(fmt.Errorf("case service not available"), http.StatusInternalServerError)
+	}
 	caseModel, err := caseService.GetByID(caseID)
 	if err != nil {
 		a.logger.Error("Failed to get case", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
 	}
 
-	// Verify reference match
 	if caseModel.ReferenceNumber != reference {
-		_ = ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("case reference mismatch"), http.StatusForbidden)
 	}
 
-	// Verify reporter match
 	if caseModel.ReporterID != reporterID {
-		_ = ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
-		return
+		return ctx.Error(fmt.Errorf("unauthorized access"), http.StatusForbidden)
 	}
 
-	// Parse multipart form
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		_ = ctx.Error(fmt.Errorf("failed to parse form: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
+	file, header, err := c.Request().FormFile("file")
 	if err != nil {
-		_ = ctx.Error(fmt.Errorf("failed to get file: %w", err), http.StatusBadRequest)
-		return
+		return ctx.Error(fmt.Errorf("failed to get file: %w", err), http.StatusBadRequest)
 	}
 	defer func(file multipart.File) {
 		err := file.Close()
@@ -388,8 +499,7 @@ func (a *AbuseAPI) uploadFile(w http.ResponseWriter, r *http.Request) {
 
 	fileData, err := io.ReadAll(file)
 	if err != nil {
-		_ = ctx.Error(fmt.Errorf("failed to read file: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to read file: %w", err), http.StatusInternalServerError)
 	}
 
 	contentType := header.Header.Get("Content-Type")
@@ -397,125 +507,225 @@ func (a *AbuseAPI) uploadFile(w http.ResponseWriter, r *http.Request) {
 		contentType = http.DetectContentType(fileData)
 	}
 
-	// Create comment
+	evidence := &models.Evidence{
+		CaseID:      caseID,
+		SubmitterID: reporterID,
+		FileName:    header.Filename,
+		ContentType: contentType,
+		FileSize:    int64(len(fileData)),
+		Source:      models.EvidenceSourceWebUpload,
+		Description: "File uploaded via web interface",
+	}
+
+	evidenceService := core.GetService[svcTypes.EvidenceService](a.ctx, svcTypes.EVIDENCE_SERVICE)
+	if evidenceService == nil {
+		return ctx.Error(fmt.Errorf("evidence service not available"), http.StatusInternalServerError)
+	}
+
+	_, err = evidenceService.CreateFromData(io.NopCloser(bytes.NewReader(fileData)), evidence)
+	if err != nil {
+		a.logger.Error("Failed to create evidence", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to store evidence: %w", err), http.StatusInternalServerError)
+	}
+
+	responseDto := &dto.AttachmentUploadResponse{
+		Message:     "File uploaded successfully",
+		FileName:    header.Filename,
+		Size:        int64(len(fileData)),
+		ContentType: contentType,
+	}
+
 	comm := &models.Communication{
 		CaseID:    caseID,
 		SenderID:  reporterID,
 		Type:      models.CommunicationTypeNote,
 		Direction: models.CommunicationDirectionExternal,
-		Content:   fmt.Sprintf("File uploaded: %s", header.Filename),
+		Content:   fmt.Sprintf("Evidence uploaded: %s (%.2f MB)", header.Filename, float64(len(fileData))/1024/1024),
+		ThreadID:  a.emailService.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber),
 	}
 
-	if _, err := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE).Create(comm); err != nil {
-		a.logger.Error("Failed to create comment", zap.Error(err))
+	commService := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE)
+	if commService == nil {
+		return ctx.Error(fmt.Errorf("communication service not available"), http.StatusInternalServerError)
 	}
 
-	ctx.Response.WriteHeader(http.StatusCreated)
-	ctx.Encode(map[string]interface{}{
-		"message":      "File uploaded successfully",
-		"filename":     header.Filename,
-		"size":         len(fileData),
-		"content_type": contentType,
-	})
+	_, err = commService.Create(comm)
+	if err != nil {
+		a.logger.Error("Failed to create communication for evidence upload", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to log file upload: %w", err), http.StatusInternalServerError)
+	}
+
+	c.Response().WriteHeader(http.StatusCreated)
+	if err := httputil.EncodeResponse[any](ctx, nil, responseDto); err != nil {
+		a.logger.Error("Failed to encode attachment upload response", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 // validateToken handles POST /tokens/validate
-func (a *AbuseAPI) validateToken(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (a *AbuseAPI) validateToken(c echo.Context) error {
+	ctx := httputil.Context(c)
 
-	var req struct {
-		Token string `json:"token"`
-	}
-	if err := ctx.Decode(&req); err != nil {
-		return
+	var reqDto dto.TokenRefreshRequest
+	_, ok := httputil.DecodeAndValidateRequest[*models.Token, *dto.TokenRefreshRequest](ctx, &reqDto)
+	if !ok {
+		return nil // Error handled by DecodeAndValidateRequest
 	}
 
-	caseID, reporterID, valid := a.tokenSvc.ValidateToken(req.Token)
+	caseID, reporterID, valid := a.tokenSvc.ValidateToken(reqDto.Token)
 	if !valid {
-		_ = ctx.Error(fmt.Errorf("invalid or expired token"), http.StatusUnauthorized)
-		return
+		return ctx.Error(fmt.Errorf("invalid or expired token"), http.StatusUnauthorized)
 	}
 
-	// Verify case exists
 	caseService := core.GetService[svcTypes.CaseService](a.ctx, svcTypes.CASE_SERVICE)
+	if caseService == nil {
+		return ctx.Error(fmt.Errorf("case service not available"), http.StatusInternalServerError)
+	}
+
 	caseModel, err := caseService.GetByID(caseID)
 	if err != nil {
 		a.logger.Error("Failed to get case", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to get case: %w", err), http.StatusInternalServerError)
 	}
 
-	// Verify reporter exists
 	reporterService := core.GetService[svcTypes.ReporterService](a.ctx, svcTypes.REPORTER_SERVICE)
+	if reporterService == nil {
+		return ctx.Error(fmt.Errorf("reporter service not available"), http.StatusInternalServerError)
+	}
+
 	if _, err := reporterService.GetByID(reporterID); err != nil {
 		a.logger.Error("Failed to get reporter", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to get reporter: %w", err), http.StatusInternalServerError)
-		return
+		return ctx.Error(fmt.Errorf("failed to get reporter: %w", err), http.StatusInternalServerError)
 	}
 
-	ctx.Encode(map[string]interface{}{
-		"valid":       true,
-		"case_id":     caseID,
-		"reporter_id": reporterID,
-		"reference":   caseModel.ReferenceNumber,
-	})
+	responseModel := &dto.ValidateTokenResponse{
+		Valid:     true,
+		Reference: caseModel.ReferenceNumber,
+	}
+	var responseDto dto.ValidateTokenResponse
+	if err := httputil.EncodeResponse(ctx, responseModel, &responseDto); err != nil {
+		a.logger.Error("Failed to encode validation response", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 // refreshToken handles POST /tokens/refresh
-func (a *AbuseAPI) refreshToken(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+func (a *AbuseAPI) refreshToken(c echo.Context) error {
+	ctx := httputil.Context(c)
 
-	var req struct {
-		Token string `json:"token"`
-	}
-	if err := ctx.Decode(&req); err != nil {
-		return
+	var reqDto dto.TokenRefreshRequest
+	_, ok := httputil.DecodeAndValidateRequest[*models.Token, *dto.TokenRefreshRequest](ctx, &reqDto)
+	if !ok {
+		return nil // Error handled by DecodeAndValidateRequest
 	}
 
-	caseID, reporterID, valid := a.tokenSvc.ValidateToken(req.Token)
+	caseID, reporterID, valid := a.tokenSvc.ValidateToken(reqDto.Token)
 	if !valid {
-		_ = ctx.Error(fmt.Errorf("invalid or expired token"), http.StatusUnauthorized)
-		return
+		return ctx.Error(fmt.Errorf("invalid access token"), http.StatusUnauthorized)
 	}
 
-	newToken, err := a.tokenSvc.GenerateToken(caseID, reporterID, 90)
+	configProvider := adapter.NewFromCore(a.ctx)
+	cookieSetter := adapter.NewCookieSetter(configProvider)
+
+	newToken, err := cookieSetter.SetJWTCookie(c.Response(), fmt.Sprintf("%d", reporterID), jwt.PurposeLogin, 90*24*time.Hour,
+		jwt.WithClaims(tjwt.NewAbuseJWTClaims(caseID, reporterID)),
+		jwt.WithModifiers(jwt.ClaimModifier(func(claims gjwt.Claims) {
+			if abuseClaims, ok := claims.(*tjwt.AbuseJWTClaims); ok {
+				abuseClaims.CaseID = caseID
+				abuseClaims.ReporterID = reporterID
+			}
+		})),
+	)
 	if err != nil {
-		a.logger.Error("Failed to generate token", zap.Error(err))
-		_ = ctx.Error(fmt.Errorf("failed to refresh token: %w", err), http.StatusInternalServerError)
-		return
+		a.logger.Error("Failed to set JWT cookie", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to set authentication cookie: %w", err), http.StatusInternalServerError)
 	}
 
-	ctx.Encode(map[string]interface{}{
-		"token":       newToken,
-		"valid_days":  90,
-		"case_id":     caseID,
-		"reporter_id": reporterID,
-	})
+	responseModel := &dto.TokenRefreshResponse{
+		Token:     newToken,
+		ValidDays: 90,
+	}
+	var responseDto dto.TokenRefreshResponse
+	if err := httputil.EncodeResponse(ctx, responseModel, &responseDto); err != nil {
+		a.logger.Error("Failed to encode refresh response", zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
-func (a *AbuseAPI) getReportStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := httputil.Context(r, w)
+// exchangeToken handles POST /api/tokens/jwt - exchanges access token for JWT
+func (a *AbuseAPI) exchangeToken(c echo.Context) error {
+	ctx := httputil.Context(c)
 
-	// Get confirmation number from URL
-	vars := mux.Vars(r)
-	confirmationNumber := vars["confirmationNumber"]
-
-	if confirmationNumber == "" || !validation.IsValidConfirmationNumber(confirmationNumber) {
-		sendErrorResponse(&ctx, http.StatusBadRequest, "Invalid confirmation number format")
-		return
+	var reqDto dto.TokenRefreshRequest
+	_, ok := httputil.DecodeAndValidateRequest[*models.Token, *dto.TokenRefreshRequest](ctx, &reqDto)
+	if !ok {
+		return nil // Error handled by DecodeAndValidateRequest
 	}
 
-	// Get report status
-	caseModel, err := a.abuseReportService.GetReportStatus(r.Context(), confirmationNumber)
-	if err != nil {
-		a.logger.Error("Failed to get report status", zap.Error(err), zap.String("confirmationNumber", confirmationNumber))
-		sendErrorResponse(&ctx, http.StatusNotFound, "Report not found")
-		return
+	caseID, reporterID, valid := a.tokenSvc.ValidateToken(reqDto.Token)
+	if !valid {
+		return ctx.Error(fmt.Errorf("invalid access token"), http.StatusUnauthorized)
 	}
 
-	var responseDto dto.AbuseReportResponse
-	err = httputil.EncodeResponse[*models.Case, *dto.AbuseReportResponse](ctx, caseModel, &responseDto)
+	configProvider := adapter.NewFromCore(a.ctx)
+	cookieSetter := adapter.NewCookieSetter(configProvider)
+
+	tokenString, err := cookieSetter.SetJWTCookie(c.Response(), fmt.Sprintf("%d", reporterID), jwt.PurposeLogin, 90*24*time.Hour,
+		jwt.WithClaims(tjwt.NewAbuseJWTClaims(caseID, reporterID)),
+		jwt.WithModifiers(jwt.ClaimModifier(func(claims gjwt.Claims) {
+			if abuseClaims, ok := claims.(*tjwt.AbuseJWTClaims); ok {
+				abuseClaims.CaseID = caseID
+				abuseClaims.ReporterID = reporterID
+			}
+		})),
+	)
 	if err != nil {
-		a.logger.Error("Failed to submit report", zap.Error(err))
+		a.logger.Error("Failed to set JWT cookie", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to set authentication cookie: %w", err), http.StatusInternalServerError)
+	}
+
+	responseModel := &dto.JWTResponse{
+		AccessToken: tokenString,
+		ExpiresAt:   time.Now().Add(90 * 24 * time.Hour),
+	}
+	var responseDto dto.JWTResponse
+	if err := httputil.EncodeResponse(ctx, responseModel, &responseDto); err != nil {
+		a.logger.Error("Failed to encode JWT response", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// caseIDMiddleware extracts case ID from JWT custom claims
+func caseIDMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+
+			ctx := httputil.Context(c)
+			hctx := c.Request().Context()
+
+			claims, ok := auth.GetClaims[*tjwt.AbuseJWTClaims](hctx)
+			if !ok {
+				return ctx.Error(fmt.Errorf("missing required claims"), http.StatusUnauthorized)
+			}
+
+			if !jwt.PurposeEqual(claims.Audience, jwt.PurposeLogin) {
+				return ctx.Error(fmt.Errorf("invalid token purpose"), http.StatusUnauthorized)
+			}
+
+			newCtx := context.WithValue(hctx, contextKeyCaseID, claims.CaseID)
+			newCtx = context.WithValue(newCtx, contextKeyReporterID, claims.ReporterID)
+
+			// Call the next handler with the new context
+			c.SetRequest(c.Request().WithContext(newCtx))
+			return next(c)
+		}
 	}
 }

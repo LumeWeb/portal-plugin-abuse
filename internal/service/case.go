@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"github.com/samber/lo"
 	"go.lumeweb.com/portal-plugin-abuse/internal"
+	"go.lumeweb.com/portal-plugin-abuse/internal/util"
+	"go.lumeweb.com/portal/event"
 	"time"
 
-	"go.lumeweb.com/portal-plugin-abuse/internal/config"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
@@ -38,79 +39,70 @@ func (s *CaseServiceDefault) ID() string {
 	return typesSvc.CASE_SERVICE
 }
 
-// Config returns the configuration for this service
-func (s *CaseServiceDefault) Config() (any, error) {
-	return nil, nil
-}
-
-// UpdateConfig updates the configuration for this service
-func (s *CaseServiceDefault) UpdateConfig(config any) error {
-	// CaseService doesn't use configuration currently
-	return nil
-}
-
 // NewCaseService creates a new case service
 func NewCaseService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &CaseServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, []core.ContextBuilderOption{
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
-
-			// Get required services
-			reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
-			if reporterSvc == nil {
-				return ctx, fmt.Errorf("reporter service not available")
-			}
-			svc.reporterSvc = reporterSvc
-
-			subjectSvc := core.GetService[typesSvc.SubjectService](ctx, typesSvc.SUBJECT_SERVICE)
-			if subjectSvc == nil {
-				return ctx, fmt.Errorf("subject service not available")
-			}
-			svc.subjectSvc = subjectSvc
-
-			emailSvc := core.GetService[typesSvc.EmailService](ctx, typesSvc.EMAIL_SERVICE)
-			if emailSvc == nil {
-				return ctx, fmt.Errorf("email service not available")
-			}
-			svc.emailSvc = emailSvc
-
-			tokenSvc := core.GetService[typesSvc.TokenService](ctx, typesSvc.TOKEN_SERVICE)
-			if tokenSvc == nil {
-				return ctx, fmt.Errorf("token service not available")
-			}
-			svc.tokenSvc = tokenSvc
-
-			communicationSvc := core.GetService[typesSvc.CommunicationService](ctx, typesSvc.COMMUNICATION_SERVICE)
-			if communicationSvc == nil {
-				return ctx, fmt.Errorf("communication service not available")
-			}
-			svc.communicationSvc = communicationSvc
-
-			evidenceSvc := core.GetService[typesSvc.EvidenceService](ctx, typesSvc.EVIDENCE_SERVICE)
-			if evidenceSvc == nil {
-				return ctx, fmt.Errorf("evidence service not available")
-			}
-			svc.evidenceSvc = evidenceSvc
-
-			blocklistSvc := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE)
-			if blocklistSvc == nil {
-				return ctx, fmt.Errorf("blocklist service not available")
-			}
-			svc.blocklistSvc = blocklistSvc
 
 			httpSvc := core.GetService[core.HTTPService](ctx, core.HTTP_SERVICE)
 			if httpSvc == nil {
-				return ctx, fmt.Errorf("http service not available")
+				return fmt.Errorf("http service not available")
 			}
 			svc.httpSvc = httpSvc
 
-			return ctx, nil
-		},
-	}
+			event.Listen[*event.BootCompleteEvent](ctx, event.EVENT_BOOT_COMPLETE, func(evt *event.BootCompleteEvent) error {
+				ctx := evt.Context()
+				// Get required services
+				reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
+				if reporterSvc == nil {
+					return fmt.Errorf("reporter service not available")
+				}
+				svc.reporterSvc = reporterSvc
 
-	return svc, options, nil
+				subjectSvc := core.GetService[typesSvc.SubjectService](ctx, typesSvc.SUBJECT_SERVICE)
+				if subjectSvc == nil {
+					return fmt.Errorf("subject service not available")
+				}
+				svc.subjectSvc = subjectSvc
+
+				emailSvc := core.GetService[typesSvc.EmailService](ctx, typesSvc.EMAIL_SERVICE)
+				if emailSvc == nil {
+					return fmt.Errorf("email service not available")
+				}
+				svc.emailSvc = emailSvc
+
+				tokenSvc := core.GetService[typesSvc.TokenService](ctx, typesSvc.TOKEN_SERVICE)
+				if tokenSvc == nil {
+					return fmt.Errorf("token service not available")
+				}
+				svc.tokenSvc = tokenSvc
+
+				communicationSvc := core.GetService[typesSvc.CommunicationService](ctx, typesSvc.COMMUNICATION_SERVICE)
+				if communicationSvc == nil {
+					return fmt.Errorf("communication service not available")
+				}
+				svc.communicationSvc = communicationSvc
+
+				evidenceSvc := core.GetService[typesSvc.EvidenceService](ctx, typesSvc.EVIDENCE_SERVICE)
+				if evidenceSvc == nil {
+					return fmt.Errorf("evidence service not available")
+				}
+				svc.evidenceSvc = evidenceSvc
+
+				blocklistSvc := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE)
+				if blocklistSvc == nil {
+					return fmt.Errorf("blocklist service not available")
+				}
+				svc.blocklistSvc = blocklistSvc
+
+				return nil
+			})
+
+			return nil
+		}),
+	}, nil
 }
 
 // SendCreationNotification sends an email notification when a case is created
@@ -140,66 +132,49 @@ func (s *CaseServiceDefault) SendCreationNotification(caseID uint) error {
 	siteURL := s.httpSvc.APISubdomain(internal.PLUGIN_NAME, true)
 
 	// Generate access token for the reporter (valid for 90 days)
-	accessToken, err := s.tokenSvc.GenerateToken(caseID, reporter.ID, 90)
+	accessToken, _, err := s.tokenSvc.GenerateToken(caseID, reporter.ID, 90)
 	if err != nil {
 		s.logger.Error("Failed to generate access token", zap.Error(err), zap.Uint("caseID", caseID), zap.Uint("reporterID", reporter.ID))
 	} else {
-		// Send access email with tokenized URL
-		accessTemplateData := core.MailerTemplateData{
-			"CaseID":       caseModel.ReferenceNumber,
-			"ReporterName": reporter.Name,
-			"PortalName":   s.ctx.Config().Config().Core.PortalName,
-			"AccessURL":    fmt.Sprintf("%s/access?token=%s", siteURL, accessToken),
-			"ExpiresIn":    "90 days",
-			"CreatedDate":  caseModel.CreatedAt.Format("January 2, 2006"),
-			"CaseType":     string(caseModel.Type),
-			"CaseStatus":   string(caseModel.Status),
+		// Send single case access email with all needed information
+		templateData := core.MailerTemplateData{
+			"CaseID":        caseModel.ReferenceNumber,
+			"Reference":     caseModel.ReferenceNumber,
+			"ReporterName":  reporter.Name,
+			"ReporterEmail": reporter.Email,
+			"SubjectType":   subject.Type,
+			"SubjectHash":   subject.Identifier,
+			"AccessURL":     fmt.Sprintf("%s/access?token=%s", siteURL, accessToken),
+			"ExpiresIn":     "90 days",
+			"PortalName":    s.ctx.Config().Config().Core.PortalName,
+			"CreatedDate":   caseModel.CreatedAt.Format("January 2, 2006"),
+			"CaseType":      string(caseModel.Type),
+			"CaseStatus":    string(caseModel.Status),
+			"ReplyTo":       threadID,
+		}
+
+		// Add high-priority warning if needed
+		if caseModel.Priority == models.CasePriorityHigh {
+			templateData["HighPriorityWarning"] = true
+			templateData["PriorityReason"] = "This case has been marked as high priority due to the nature of the report"
+		}
+
+		// Validate template requirements
+		requiredFields := []string{"CaseID", "ReporterName", "PortalName", "AccessURL", "CreatedDate"}
+		if err := s.ValidateTemplateData("case_access", templateData, requiredFields); err != nil {
+			s.logger.Error("Invalid template data for case access notification",
+				zap.Uint("caseID", caseModel.ID),
+				zap.Error(err))
+			return fmt.Errorf("failed to validate template data: %w", err)
 		}
 
 		if err := s.emailSvc.SendTemplatedEmail(
 			[]string{reporter.Email},
 			"case_access",
-			accessTemplateData,
+			templateData,
 		); err != nil {
-			s.logger.Error("Failed to send case access email", zap.Error(err))
+			return fmt.Errorf("failed to send access notification: %w", err)
 		}
-	}
-
-	// Send main creation notification
-	templateData := core.MailerTemplateData{
-		"CaseID":        caseModel.ReferenceNumber,
-		"Reference":     caseModel.ReferenceNumber,
-		"ReporterName":  reporter.Name,
-		"ReporterEmail": reporter.Email,
-		"SubjectType":   subject.Type,
-		"SubjectHash":   subject.Identifier,
-		"CaseURL":       fmt.Sprintf("%s/case/%s", siteURL, caseModel.ReferenceNumber),
-		"PortalName":    s.ctx.Config().Config().Core.PortalName,
-		"CreatedDate":   caseModel.CreatedAt.Format("January 2, 2006"),
-		"ReplyTo":       threadID,
-	}
-
-	// Add high-priority warning if needed
-	if caseModel.Priority == models.CasePriorityHigh {
-		templateData["HighPriorityWarning"] = true
-		templateData["PriorityReason"] = "This case has been marked as high priority due to the nature of the report"
-	}
-
-	// Validate template requirements
-	requiredFields := []string{"CaseID", "ReporterName", "PortalName", "CaseURL", "CreatedDate"}
-	if err := s.ValidateTemplateData("case_created", templateData, requiredFields); err != nil {
-		s.logger.Error("Invalid template data for case creation notification",
-			zap.Uint("caseID", caseModel.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to validate template data: %w", err)
-	}
-
-	if err := s.emailSvc.SendTemplatedEmail(
-		[]string{reporter.Email},
-		"case_created",
-		templateData,
-	); err != nil {
-		return fmt.Errorf("failed to send creation notification: %w", err)
 	}
 
 	comm := &models.Communication{
@@ -263,12 +238,7 @@ func (s *CaseServiceDefault) SendStatusUpdateNotification(caseID uint, oldStatus
 	// Generate thread ID for replies
 	threadID := s.emailSvc.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber)
 
-	// Template data
-	emailConfig, ok := s.ctx.Config().GetService(typesSvc.EMAIL_SERVICE).(*config.EmailConfig)
-	siteURL := "https://example.com" // Default fallback
-	if ok && emailConfig.SiteURL != "" {
-		siteURL = emailConfig.SiteURL
-	}
+	siteURL := core.GetService[core.HTTPService](s.ctx, core.HTTP_SERVICE).APISubdomain("admin", true)
 
 	templateData := core.MailerTemplateData{
 		"CaseID":      caseModel.ID,
@@ -314,12 +284,12 @@ func (s *CaseServiceDefault) SendStatusUpdateNotification(caseID uint, oldStatus
 func (s *CaseServiceDefault) Create(caseData *models.Case) (*models.Case, error) {
 	if err := caseData.Validate(); err != nil {
 		s.logger.Error("Invalid case data", zap.Error(err))
-		return nil, fmt.Errorf("invalid case data: %w", err)
+		return nil, db.HandleDBError(err, "Validate", "Case", 0)
 	}
 
 	if err := db.Create(context.Background(), s.ctx, s.db, caseData); err != nil {
 		s.logger.Error("Failed to create case", zap.Error(err))
-		return nil, fmt.Errorf("failed to create case: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Case", 0)
 	}
 
 	// Send creation notification asynchronously
@@ -340,23 +310,23 @@ func (s *CaseServiceDefault) GetByID(id uint) (*models.Case, error) {
 	if err := db.GetByID(context.Background(), s.ctx, s.db, id, &caseModel, func(_db *gorm.DB) *gorm.DB {
 		return _db.Preload("CaseScan")
 	}); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("case not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to get case by ID", zap.Error(err), zap.Uint("caseID", id))
-		return nil, fmt.Errorf("failed to fetch case: %w", err)
+		return nil, db.HandleDBError(err, "GetByID", "Case", id)
 	}
 	return &caseModel, nil
 }
 
 // List returns a list of cases with filtering, sorting and pagination
-func (s *CaseServiceDefault) List(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Case, int64, error) {
+func (s *CaseServiceDefault) List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Case, int64, error) {
 	var cases []models.Case
 	var total int64
 
 	if err := db.List[models.Case](context.Background(), s.ctx, s.db, filters, sorts, pagination, &cases, &total); err != nil {
 		s.logger.Error("Failed to list cases", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to list cases: %w", err)
+		return nil, 0, db.HandleDBError(err, "List", "Case", 0)
 	}
 
 	return cases, total, nil
@@ -366,12 +336,12 @@ func (s *CaseServiceDefault) List(filters []queryutil.Filter, sorts []queryutil.
 func (s *CaseServiceDefault) Update(caseModel *models.Case) error {
 	if err := caseModel.Validate(); err != nil {
 		s.logger.Error("Invalid case data", zap.Error(err), zap.Uint("caseID", caseModel.ID))
-		return fmt.Errorf("invalid case data: %w", err)
+		return db.HandleDBError(err, "Validate", "Case", caseModel.ID)
 	}
 
 	if err := db.Update(context.Background(), s.ctx, s.db, caseModel); err != nil {
 		s.logger.Error("Failed to update case", zap.Error(err), zap.Uint("caseID", caseModel.ID))
-		return fmt.Errorf("failed to update case: %w", err)
+		return db.HandleDBError(err, "Update", "Case", caseModel.ID)
 	}
 
 	return nil
@@ -436,11 +406,11 @@ func (s *CaseServiceDefault) GetCaseByReference(reference string) (*models.Case,
 	err := db.GetByProperty(context.Background(), s.ctx, s.db, "reference_number", reference, &caseModel)
 
 	if err != nil {
-		if errors.Is(err, fmt.Errorf("record not found")) {
-			return nil, fmt.Errorf("case not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to fetch case by reference", zap.Error(err), zap.String("reference", reference))
-		return nil, fmt.Errorf("failed to fetch case: %w", err)
+		return nil, db.HandleDBError(err, "GetByReference", "Case", 0)
 	}
 	return &caseModel, nil
 }
@@ -455,50 +425,26 @@ func (s *CaseServiceDefault) GetPublicCase(reference string, reporterID uint) (*
 	// Verify that the reporter ID matches
 	if caseModel.ReporterID != reporterID {
 		s.logger.Warn("Unauthorized access attempt", zap.String("reference", reference), zap.Uint("reporterID", reporterID))
-		return nil, fmt.Errorf("unauthorized access")
+		return nil, db.ErrInvalidInput
 	}
 
 	return caseModel, nil
 }
 
-func (s *CaseServiceDefault) extractDateRange(filters []queryutil.Filter) (time.Time, time.Time, error) {
+// GetAnalytics returns aggregated case metrics with filters
+func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.CrudFilter) (*typesSvc.CaseAnalytics, error) {
 	var start, end time.Time
 	now := time.Now()
 
-	// Default to last 30 days if no filters
-	end = now
-	start = now.AddDate(0, 0, -30)
-
-	// Look for date range in filters
-	for _, filter := range filters {
-		if filter.Field == "created_at" {
-			switch filter.Operator {
-			case queryutil.OperatorGTE:
-				if t, ok := filter.Value.(time.Time); ok {
-					start = t
-				}
-			case queryutil.OperatorLTE:
-				if t, ok := filter.Value.(time.Time); ok {
-					end = t
-				}
-			}
-		}
-	}
-
-	// Validate date range
-	if start.After(end) {
-		return time.Time{}, time.Time{}, fmt.Errorf("start date cannot be after end date")
-	}
-
-	return start, end, nil
-}
-
-// GetAnalytics returns aggregated case metrics with filters
-func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.Filter) (*typesSvc.CaseAnalytics, error) {
-	// Extract date range first
-	start, end, err := s.extractDateRange(filters)
+	// Handle time range filters
+	filters, err := util.ApplyTimeRangeFilters(filters, "created_at")
 	if err != nil {
-		return nil, fmt.Errorf("invalid date range: %w", err)
+		return nil, err
+	}
+
+	// Default to last 30 days if no time range specified
+	if queryutil.FindFilterWithOperator(filters, "created_at", queryutil.OpGte) == nil {
+		filters = append(filters, queryutil.FieldGte("created_at", now.AddDate(0, 0, -30)))
 	}
 
 	// Initialize analytics with proper map allocations
@@ -535,70 +481,48 @@ func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.Filter) (*typesSvc
 	analytics.OpenCases = openCases
 
 	// Status Breakdown
-	type CaseStatusAggregate struct {
-		Status models.CaseStatus
-		Count  int64
-	}
-	var statusResults []CaseStatusAggregate
-	err = db.ListAggregate[CaseStatusAggregate](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &statusResults,
-		db.WithDBSelect("status, count(*) as count"),
-		db.WithDBGroupBy("status"),
-	)
+	var statusResults []models.CaseStatusBreakdown
+	var statusTotal int64
+	err = db.List[models.CaseStatusBreakdown](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &statusResults, &statusTotal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status breakdown: %w", err)
 	}
 	for _, res := range statusResults {
-		analytics.StatusBreakdown[res.Status] = res.Count
+		analytics.StatusBreakdown[res.Status] += res.Count
 	}
 
 	// Needs Review
-	needsReviewCount, err := db.Count[models.Case](context.Background(), s.ctx, s.db, append(filters, queryutil.Filter{
-		Field:    "needs_review",
-		Operator: queryutil.OperatorEquals,
-		Value:    true,
-	}))
+	needsReviewCount, err := db.Count[models.Case](context.Background(), s.ctx, s.db, append(filters, queryutil.FieldEqual("needs_review", true)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get needs review count: %w", err)
 	}
 	analytics.NeedsReviewCount = needsReviewCount
 
 	// Case Type Breakdown
-	type CaseTypeAggregate struct {
-		Type  models.CaseType
-		Count int64
-	}
-	var typeResults []CaseTypeAggregate
-	err = db.ListAggregate[CaseTypeAggregate](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &typeResults,
-		db.WithDBSelect("type, count(*) as count"),
-		db.WithDBGroupBy("type"),
-	)
+	var typeResults []models.CaseTypeBreakdown
+	var typeTotal int64
+	err = db.List[models.CaseTypeBreakdown](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &typeResults, &typeTotal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get case type breakdown: %w", err)
 	}
 	for _, res := range typeResults {
-		analytics.CaseTypeBreakdown[res.Type] = res.Count
+		analytics.CaseTypeBreakdown[res.Type] += res.Count
 	}
 
 	// Source Breakdown
-	type SourceAggregate struct {
-		Source models.ReportSource
-		Count  int64
-	}
-	var sourceResults []SourceAggregate
-	err = db.ListAggregate[SourceAggregate](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &sourceResults,
-		db.WithDBSelect("source, count(*) as count"),
-		db.WithDBGroupBy("source"),
-	)
+	var sourceResults []models.CaseSourceBreakdown
+	var sourceTotal int64
+	err = db.List[models.CaseSourceBreakdown](context.Background(), s.ctx, s.db, filters, nil, queryutil.Pagination{}, &sourceResults, &sourceTotal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source breakdown: %w", err)
 	}
 	for _, res := range sourceResults {
-		analytics.SourceBreakdown[res.Source] = res.Count
+		analytics.SourceBreakdown[res.Source] += res.Count
 	}
 	// Get metrics from other services using new metrics methods
 	commStats, err := s.communicationSvc.GetCommunicationMetrics(start, end)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get communication metrics: %w", err)
+		return nil, db.HandleDBError(err, "GetCommunicationMetrics", "Communication", 0)
 	}
 	analytics.CommsMetrics = *commStats
 
@@ -608,21 +532,21 @@ func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.Filter) (*typesSvc
 	}
 	analytics.EvidenceMetrics = *evidenceStats
 
-	blockStats, err := s.blocklistSvc.GetBlocklistMetrics(start, end)
+	blockStats, err := s.blocklistSvc.GetBlocklistMetrics(filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blocklist metrics: %w", err)
 	}
 	analytics.BlocklistMetrics = *blockStats
 
 	// Get resolution trends from view
-	var resolutionTrends []models.DailyResolution
-	filters = []queryutil.Filter{
-		{Field: "resolution_date", Operator: queryutil.OperatorGTE, Value: start},
-		{Field: "resolution_date", Operator: queryutil.OperatorLTE, Value: end},
-	}
+	var resolutionTrends []models.CaseDailyResolution
+	filters = queryutil.Filters(
+		queryutil.FieldGte("resolution_date", start),
+		queryutil.FieldLte("resolution_date", end),
+	)
 
 	var total int64
-	if err := db.List[models.DailyResolution](
+	if err := db.List[models.CaseDailyResolution](
 		context.Background(),
 		s.ctx,
 		s.db,
@@ -638,7 +562,14 @@ func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.Filter) (*typesSvc
 	// Convert to map format with time.Time keys
 	analytics.ResolutionTrends = make(map[time.Time]int64)
 	for _, trend := range resolutionTrends {
-		analytics.ResolutionTrends[trend.ResolutionDate] = trend.ResolvedCount
+		date, err := trend.GetDate()
+		if err != nil {
+			s.logger.Warn("Failed to parse resolution date, skipping",
+				zap.String("date", trend.ResolutionDate),
+				zap.Error(err))
+			continue
+		}
+		analytics.ResolutionTrends[date] = trend.ResolvedCount
 		analytics.TotalResolved += trend.ResolvedCount
 		analytics.TotalResolutionSeconds += trend.AvgResolutionSeconds * float64(trend.ResolvedCount)
 	}
@@ -653,44 +584,31 @@ func (s *CaseServiceDefault) GetAnalytics(filters []queryutil.Filter) (*typesSvc
 func (s *CaseServiceDefault) calculateStatusDurations(caseID uint) map[models.CaseStatus]time.Duration {
 	durations := make(map[models.CaseStatus]time.Duration)
 
-	var history []models.CaseStatusHistory
-	filters := []queryutil.Filter{
-		{Field: "case_id", Operator: queryutil.OperatorEquals, Value: caseID},
-	}
-	sorts := []queryutil.Sort{
-		{Field: "changed_at", Order: queryutil.OrderAsc},
-	}
+	var statusDurations []models.CaseStatusDuration
+	filters := queryutil.Filters(
+		queryutil.FieldEqual("case_id", caseID),
+	)
 
 	var total int64
-	err := db.List[models.CaseStatusHistory](
+	err := db.List[models.CaseStatusDuration](
 		context.Background(),
 		s.ctx,
 		s.db,
 		filters,
-		sorts,
+		nil,
 		queryutil.Pagination{},
-		&history,
+		&statusDurations,
 		&total,
 	)
 	if err != nil {
-		s.logger.Error("Failed to fetch status history",
+		s.logger.Error("Failed to fetch status durations",
 			zap.Uint("caseID", caseID),
 			zap.Error(err))
 		return durations
 	}
 
-	var prevEntry models.CaseStatusHistory
-	for _, entry := range history {
-		if prevEntry.ID != 0 {
-			duration := entry.ChangedAt.Sub(prevEntry.ChangedAt)
-			durations[prevEntry.NewStatus] += duration
-		}
-		prevEntry = entry
-	}
-
-	// Add current status duration if case is still open
-	if prevEntry.ID != 0 && prevEntry.NewStatus != models.CaseStatusResolved && prevEntry.NewStatus != models.CaseStatusClosed {
-		durations[prevEntry.NewStatus] += time.Since(prevEntry.ChangedAt)
+	for _, sd := range statusDurations {
+		durations[sd.NewStatus] = sd.Duration()
 	}
 
 	return durations
@@ -698,19 +616,125 @@ func (s *CaseServiceDefault) calculateStatusDurations(caseID uint) map[models.Ca
 
 func (s *CaseServiceDefault) Get7DayAnalytics() (*typesSvc.CaseAnalytics, error) {
 	start := time.Now().AddDate(0, 0, -7)
-	return s.GetAnalytics([]queryutil.Filter{
-		{Field: "created_at", Operator: queryutil.OperatorGTE, Value: start},
-	})
+	return s.GetAnalytics(queryutil.Filters(
+		queryutil.FieldGte("created_at", start),
+	))
 }
 
 func (s *CaseServiceDefault) Get30DayAnalytics() (*typesSvc.CaseAnalytics, error) {
 	start := time.Now().AddDate(0, 0, -30)
-	return s.GetAnalytics([]queryutil.Filter{
-		{Field: "created_at", Operator: queryutil.OperatorGTE, Value: start},
-	})
+	return s.GetAnalytics(queryutil.Filters(
+		queryutil.FieldGte("created_at", start),
+	))
 }
 
-func (s *CaseServiceDefault) Search(ctx context.Context, query string, filters []queryutil.Filter, pagination queryutil.Pagination) ([]models.Case, int64, error) {
+func (s *CaseServiceDefault) Get24HourAnalytics() (*typesSvc.CaseAnalytics, error) {
+	start := time.Now().Add(-24 * time.Hour)
+	return s.GetAnalytics(queryutil.Filters(
+		queryutil.FieldGte("created_at", start),
+	))
+}
+
+func (s *CaseServiceDefault) GetTypeSourceMatrix(timeRange string, filters []queryutil.CrudFilter) ([]models.CaseTypeSourceBreakdown, error) {
+	// Calculate time range
+	_, _, err := util.ParseTimeRange(timeRange)
+	if err != nil {
+		return nil, util.ErrInvalidTimeRange
+	}
+
+	var results []models.CaseTypeSourceBreakdown
+	var total int64
+	err = db.List[models.CaseTypeSourceBreakdown](
+		context.Background(),
+		s.ctx,
+		s.db,
+		filters,
+		nil,
+		queryutil.Pagination{},
+		&results,
+		&total,
+	)
+
+	if err != nil {
+		s.logger.Error("Failed to get case type source matrix",
+			zap.Error(err),
+			zap.String("timeRange", timeRange))
+		return nil, fmt.Errorf("failed to get case type source matrix: %w", err)
+	}
+
+	return results, nil
+}
+
+func (s *CaseServiceDefault) GetStatusFlowData(filters []queryutil.CrudFilter) (*typesSvc.StatusFlowGraph, error) {
+	// Remove the time_range filter since it's a meta-filter and not a column
+	filters = lo.Filter(filters, func(f queryutil.CrudFilter, _ int) bool {
+		return f.GetField() != "time_range"
+	})
+
+	// Handle time range filters
+	cleanedFilters, err := util.ApplyTimeRangeFilters(filters, "changed_at")
+	if err != nil {
+		return nil, err
+	}
+	filters = cleanedFilters
+
+	var transitions []models.CaseStatusTransition
+	var total int64
+
+	if err := db.List[models.CaseStatusTransition](
+		context.Background(),
+		s.ctx,
+		s.db,
+		filters,
+		nil,
+		queryutil.Pagination{},
+		&transitions,
+		&total,
+	); err != nil {
+		return nil, fmt.Errorf("failed to get status transitions: %w", err)
+	}
+
+	// Filter out transitions with same from/to status
+	filteredTransitions := lo.Filter(transitions, func(t models.CaseStatusTransition, _ int) bool {
+		return t.FromStatus != t.ToStatus
+	})
+
+	// Get all unique statuses and convert to nodes
+	nodes := lo.Map(
+		lo.Uniq(
+			lo.FlatMap(filteredTransitions, func(t models.CaseStatusTransition, _ int) []models.CaseStatus {
+				return []models.CaseStatus{t.FromStatus, t.ToStatus}
+			}),
+		),
+		func(status models.CaseStatus, _ int) typesSvc.StatusFlowNode {
+			return typesSvc.StatusFlowNode{Name: string(status)}
+		},
+	)
+
+	// Group and sum transitions
+	type transitionKey struct{ From, To models.CaseStatus }
+	links := lo.MapToSlice(
+		lo.GroupBy(filteredTransitions, func(t models.CaseStatusTransition) transitionKey {
+			return transitionKey{t.FromStatus, t.ToStatus}
+		}),
+		func(key transitionKey, group []models.CaseStatusTransition) typesSvc.StatusFlowLink {
+			return typesSvc.StatusFlowLink{
+				Source: string(key.From),
+				Target: string(key.To),
+				Value:  lo.SumBy(group, func(t models.CaseStatusTransition) int64 { return t.TransitionCount }),
+			}
+		},
+	)
+
+	response := &typesSvc.StatusFlowGraph{
+		Nodes: nodes,
+		Links: links,
+	}
+
+	return response, nil
+}
+
+func (s *CaseServiceDefault) Search(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Case, int64, error) {
 	var cases []models.Case
 	var total int64
 
@@ -718,8 +742,62 @@ func (s *CaseServiceDefault) Search(ctx context.Context, query string, filters [
 
 	if err != nil {
 		s.logger.Error("Search failed", zap.Error(err))
-		return nil, 0, fmt.Errorf("search failed: %w", err)
+		return nil, 0, db.HandleDBError(err, "Search", "Case", 0)
 	}
 
 	return cases, total, nil
+}
+
+func (s *CaseServiceDefault) GetTimeSeriesMetrics(metric string, timeRange string, filters []queryutil.CrudFilter) ([]int64, error) {
+	// Calculate time range
+	_, _, err := util.ParseTimeRange(timeRange)
+	if err != nil {
+		return nil, util.ErrInvalidTimeRange
+	}
+
+	var results []models.CaseDailyMetrics
+	var total int64
+	err = db.List[models.CaseDailyMetrics](
+		context.Background(),
+		s.ctx,
+		s.db,
+		filters,
+		[]queryutil.Sort{{Field: "metric_date", Order: queryutil.OrderAsc}},
+		queryutil.Pagination{}, // No pagination needed for time series
+		&results,
+		&total,
+		func(_db *gorm.DB) *gorm.DB {
+			switch metric {
+			case "open_cases":
+				return _db.Select("metric_date, open_cases")
+			case "new_cases":
+				return _db.Select("metric_date, new_cases")
+			case "resolved_cases":
+				return _db.Select("metric_date, resolved_cases")
+			default:
+				return _db
+			}
+		},
+	)
+
+	if err != nil {
+		return nil, db.HandleDBError(err, "List", "CaseDailyMetrics", 0)
+	}
+
+	// Extract requested metric
+	data := make([]int64, len(results))
+	for i, r := range results {
+		switch metric {
+		case "open_cases":
+			data[i] = r.OpenCases
+		case "new_cases":
+			data[i] = r.NewCases
+		case "resolved_cases":
+			data[i] = r.ResolvedCases
+		default:
+			return nil, typesSvc.ErrInvalidMetric
+		}
+	}
+
+	return data, nil
 }

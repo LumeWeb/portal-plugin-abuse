@@ -21,14 +21,14 @@ type BlockList struct {
 	UploaderID *uint // User who uploaded/shared the content (if known)
 
 	// Block details
-	Reason   string // Why it was blocked (malware, policy, etc.)
-	Severity string // critical, high, medium, low
-	Action   string `gorm:"type:string;not null"`       // reject, quarantine, warn, log
+	Reason   BlockReason   // Why it was blocked (malware, policy, etc.)
+	Severity BlockSeverity // critical, high, medium, low
+	Action   BlockAction   `gorm:"type:string;not null"` // reject, quarantine, warn, log
 
 	// Block metadata
-	Description string `gorm:"type:text"`         // Human readable explanation
-	BlockedBy   uint   `gorm:"not null;index"`    // User ID or 0 for system
-	Source      string // Where block originated (scanner, report, manual, etc.)
+	Description string      `gorm:"type:text"`      // Human readable explanation
+	BlockedBy   uint        `gorm:"not null;index"` // User ID or 0 for system
+	Source      BlockSource // Where block originated (scanner, report, manual, etc.)
 
 	// Related abuse case
 	CaseID *uint // Associated abuse case if any
@@ -44,7 +44,7 @@ type BlockList struct {
 
 // TableName specifies the database table name
 func (BlockList) TableName() string {
-	return "abuse_blocked_content"
+	return "abuse_blocklist"
 }
 
 // BlockReason defines why content was blocked

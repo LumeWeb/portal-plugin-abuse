@@ -5,6 +5,7 @@ import (
 )
 
 var _ config.Defaults = (*ScanConfig)(nil)
+var _ config.Defaults = (*ClamAVConfig)(nil)
 
 // ClamAVConfig holds ClamAV scanner configuration
 type ClamAVConfig struct {
@@ -27,11 +28,11 @@ func (c *ScanConfig) Defaults() map[string]any {
 	}
 }
 
-func (c *ClamAVConfig) Default() map[string]any {
+func (c *ClamAVConfig) Defaults() map[string]any {
 	return map[string]any{
 		"enabled":     true,
 		"network":     "unix",
-		"address":     "/var/run/clamav/clamd.sock",
+		"address":     "/var/run/clamav/clamd.ctl",
 		"max_workers": 10,
 	}
 }

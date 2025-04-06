@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/samber/lo"
-
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
@@ -24,16 +22,12 @@ var _ typesSvc.SearchService = (*SearchServiceDefault)(nil)
 // NewSearchService creates a new search service
 func NewSearchService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &SearchServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
-
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // ID returns the service identifier
@@ -42,42 +36,36 @@ func (s *SearchServiceDefault) ID() string {
 }
 
 // SearchCases performs a search across cases
-func (s *SearchServiceDefault) SearchCases(ctx context.Context, query string, filters []queryutil.Filter, pagination queryutil.Pagination) ([]models.Case, int64, error) {
+func (s *SearchServiceDefault) SearchCases(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Case, int64, error) {
 	var cases []models.Case
 	var total int64
 
 	// Apply search query if provided
 	if query != "" {
-		filters = append(filters, queryutil.Filter{
-			Field: "search",
-			Value: query,
-		})
+		filters = append(filters, queryutil.Search(query))
 	}
 
 	if err := db.List(context.Background(), s.ctx, s.db, filters, []queryutil.Sort{}, pagination, &cases, &total); err != nil {
 		s.logger.Error("Failed to list cases", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to list cases: %w", err)
+		return nil, 0, db.HandleDBError(err, "SearchCases", "Case", 0)
 	}
 
 	return cases, total, nil
 }
 
 // SearchReporters performs a search across reporters
-func (s *SearchServiceDefault) SearchReporters(ctx context.Context, query string, filters []queryutil.Filter, pagination queryutil.Pagination) ([]models.Reporter, int64, error) {
+func (s *SearchServiceDefault) SearchReporters(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Reporter, int64, error) {
 	var reporters []models.Reporter
 	var total int64
 
 	// Apply search query if provided
 	if query != "" {
-		filters = append(filters, queryutil.Filter{
-			Field: "search",
-			Value: query,
-		})
+		filters = append(filters, queryutil.Search(query))
 	}
 
 	if err := db.List(context.Background(), s.ctx, s.db, filters, []queryutil.Sort{}, pagination, &reporters, &total); err != nil {
 		s.logger.Error("Failed to list reporters", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to list reporters: %w", err)
+		return nil, 0, db.HandleDBError(err, "SearchReporters", "Reporter", 0)
 	}
 
 	return reporters, total, nil

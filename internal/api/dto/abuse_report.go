@@ -1,17 +1,20 @@
 package dto
 
 import (
+	"fmt"
 	z "github.com/Oudwins/zog"
 	"go.lumeweb.com/httputil"
-	"time"
-
-	"github.com/google/uuid"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
+	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/urlparser"
+	"go.lumeweb.com/portal/core"
+	"time"
 )
 
 var _ httputil.DTOValidator = (*AbuseReportRequest)(nil)
 var _ httputil.DTORequest[*models.Case] = (*AbuseReportRequest)(nil)
-var _ httputil.DTOResponse[*models.Case] = (*AbuseReportResponse)(nil)
+var _ httputil.DTOResponse[*AbuseReportResponseModel] = (*AbuseReportResponse)(nil)
+
+var dtoLogger = core.NewLogger(nil)
 
 // AbuseReportRequest represents the incoming request for an abuse report
 type AbuseReportRequest struct {
@@ -24,19 +27,34 @@ type AbuseReportRequest struct {
 
 // ToCaseModel converts the DTO to a Case model
 func (r AbuseReportRequest) ToModel() (*models.Case, error) {
+	// Extract and validate multihash from location
+	hashes, err := urlparser.ExtractMultihashesFromURL(r.Location, dtoLogger)
+	if err != nil {
+		return nil, fmt.Errorf("invalid location URL: %w", err)
+	}
+
+	if len(hashes) == 0 {
+		return nil, fmt.Errorf("no valid multihash found in location URL")
+	}
+
+	// Validate the first found multihash
+	shash, err := core.ParseStorageHash(hashes[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid multihash in location: %w", err)
+	}
+
 	caseModel := &models.Case{
-		ReferenceNumber: uuid.New().String()[:8],
-		Type:            models.CaseType(r.AbuseType),
-		Status:          models.CaseStatusNew,
-		Priority:        models.CasePriorityMedium,
-		Description:     r.Description,
-		Source:          models.ReportSourceAPI,
+		Type:        models.CaseType(r.AbuseType),
+		Status:      models.CaseStatusNew,
+		Priority:    models.CasePriorityMedium,
+		Description: r.Description,
+		Source:      models.ReportSourceAPI,
 		Reporter: models.Reporter{
 			Email: r.Email,
 			Name:  r.Email, // Default name to email
 		},
 		Subject: models.Subject{
-			Identifier: nil,
+			Identifier: shash.Multihash(),
 			Type:       models.SubjectTypeURL,
 			SourceURL:  r.Location,
 		},
@@ -47,15 +65,9 @@ func (r AbuseReportRequest) ToModel() (*models.Case, error) {
 
 func (r *AbuseReportRequest) Schema() *z.StructSchema {
 	return z.Struct(z.Schema{
-		"Email":    z.String().Required().Email(),
-		"Location": z.String().Required().URL(),
-		"AbuseType": z.String().Required().OneOf([]string{
-			"malicious_content",
-			"resource_abuse",
-			"copyright_violation",
-			"phishing_scam",
-			"other",
-		}),
+		"Email":             z.String().Required().Email(),
+		"Location":          z.String().Required().URL(),
+		"AbuseType":         z.String().Required().OneOf(models.ValidCaseTypes),
 		"Description":       z.String().Required().Min(10),
 		"AdditionalDetails": z.String().Optional(),
 	})
@@ -63,19 +75,25 @@ func (r *AbuseReportRequest) Schema() *z.StructSchema {
 
 // AbuseReportResponse represents the response for an abuse report submission
 type AbuseReportResponse struct {
-	Success            bool      `json:"success"`
-	ConfirmationNumber string    `json:"confirmation_number"`
-	ReceivedAt         time.Time `json:"received_at"`
-	Message            string    `json:"message,omitempty"`
+	CaseReference string    `json:"case_reference"`
+	AccessToken   string    `json:"access_token,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at,omitempty"`
+	ReceivedAt    time.Time `json:"received_at,omitempty"`
 }
 
-// FromModel converts a Case model to a response DTO
-func (r *AbuseReportResponse) FromModel(c *models.Case) error {
-	r.Success = true
-	r.ConfirmationNumber = c.ReferenceNumber
-	r.ReceivedAt = c.CreatedAt
-	r.Message = "Your abuse report has been successfully submitted."
+// AbuseReportResponseModel extends the base response with embedded Case model and auth details
+type AbuseReportResponseModel struct {
+	*models.Case
+	AccessToken string
+	ExpiresAt   time.Time
+}
 
+// FromModel converts a Case model to a response DTO with auth token
+func (r *AbuseReportResponse) FromModel(c *AbuseReportResponseModel) error {
+	r.CaseReference = "CASE-" + c.ReferenceNumber
+	r.ReceivedAt = c.CreatedAt
+	r.AccessToken = c.AccessToken
+	r.ExpiresAt = c.ExpiresAt
 	return nil
 }
 

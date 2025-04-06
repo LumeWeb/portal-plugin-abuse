@@ -1,15 +1,67 @@
 package models
 
+import (
+	"github.com/samber/lo"
+)
+
 // CaseType defines the type of abuse case
 type CaseType string
 
 const (
-	CaseTypeSpam       CaseType = "spam"
-	CaseTypeHarassment CaseType = "harassment"
-	CaseTypeContent    CaseType = "content"
-	CaseTypeMalware    CaseType = "malware" // Malware, viruses, and security threats
-	CaseTypeOther      CaseType = "other"
+	CaseTypeSpam                   CaseType = "spam"
+	CaseTypeHarassment             CaseType = "harassment"
+	CaseTypeMalware                CaseType = "malware"
+	CaseTypePhishing               CaseType = "phishing"
+	CaseTypeCopyrightViolation     CaseType = "copyright_violation"
+	CaseTypeResourceAbuse          CaseType = "resource_abuse"
+	CaseTypeIllegalOrHarmfulContent CaseType = "illegal_or_harmful_content"
+	CaseTypeOther                  CaseType = "other"
 )
+
+// ValidCaseTypes contains all valid CaseType values for validation
+var ValidCaseTypes = []string{
+	string(CaseTypeSpam),
+	string(CaseTypeHarassment),
+	string(CaseTypeMalware),
+	string(CaseTypePhishing),
+	string(CaseTypeCopyrightViolation),
+	string(CaseTypeResourceAbuse),
+	string(CaseTypeIllegalOrHarmfulContent),
+	string(CaseTypeOther),
+}
+
+// ValidCasePriorities contains all valid CasePriority values
+var ValidCasePriorities = []string{
+	string(CasePriorityLow),
+	string(CasePriorityMedium),
+	string(CasePriorityHigh),
+	string(CasePriorityCritical),
+}
+
+// ValidCasePriorityMap provides O(1) lookups for valid priorities
+var ValidCasePriorityMap = lo.SliceToMap(ValidCasePriorities, func(s string) (CasePriority, bool) {
+	return CasePriority(s), true
+})
+
+// ValidCaseStatuses contains all valid CaseStatus values
+var ValidCaseStatuses = []string{
+	string(CaseStatusNew),
+	string(CaseStatusInProgress),
+	string(CaseStatusResolved),
+	string(CaseStatusClosed),
+}
+
+// ValidCaseStatusMap provides O(1) lookups for valid statuses
+var ValidCaseStatusMap = lo.SliceToMap(ValidCaseStatuses, func(s string) (CaseStatus, bool) {
+	return CaseStatus(s), true
+})
+
+// ValidReportSources contains all valid ReportSource values
+var ValidReportSources = []string{
+	string(ReportSourceWebForm),
+	string(ReportSourceEmail),
+	string(ReportSourceAPI),
+}
 
 // CaseStatus defines the current status of a case
 type CaseStatus string

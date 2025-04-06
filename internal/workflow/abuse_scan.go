@@ -8,6 +8,7 @@ import (
 	"go.lumeweb.com/portal-plugin-abuse/internal/cron/define"
 	svcTypes "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/service"
+	"go.lumeweb.com/queryutil"
 	"go.uber.org/zap"
 	"time"
 
@@ -129,7 +130,7 @@ func (h *scanOperationHandler) GetStatus(ctx context.Context, req *models.Reques
 	}
 
 	// Get scan results through the scan service
-	results, err := h.scanSvc.GetScanResults(initData.CaseScanID)
+	results, _, err := h.scanSvc.GetScanResults(initData.CaseScanID, nil, nil, queryutil.Pagination{})
 	if err != nil {
 		return core.RequestStatus{}, fmt.Errorf("failed to get scan results: %w", err)
 	}

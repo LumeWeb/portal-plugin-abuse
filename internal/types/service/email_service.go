@@ -10,6 +10,7 @@ import (
 // EmailService handles all email-related operations
 type EmailService interface {
 	core.Service
+	core.Configurable
 
 	// SendTemplatedEmail sends an email using a registered template to all recipients
 	SendTemplatedEmail(to []string, templateName string, data core.MailerTemplateData) error

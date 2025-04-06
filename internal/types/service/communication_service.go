@@ -21,8 +21,11 @@ type CommunicationService interface {
 	GetByThreadID(threadID string) (*models.Communication, error)
 
 	// ListByCaseID retrieves all communications for a case with filtering, sorting and pagination
-	ListByCaseID(caseID uint, filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Communication, int64, error)
+	ListByCaseID(caseID uint, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Communication, int64, error)
 
 	// GetCommMetrics gets communication metrics within a date range
 	GetCommunicationMetrics(start, end time.Time) (*CommAnalytics, error)
+
+	// GetCommunicationTimeline retrieves a timeline of communication counts per hour over a specified time range with optional filters.
+	GetCommunicationTimeline(timeRange string, filters []queryutil.CrudFilter) ([]models.CommunicationHourlyCount, error)
 }

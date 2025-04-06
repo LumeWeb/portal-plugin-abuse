@@ -28,7 +28,10 @@ func (b *BaseService) ValidateTemplateData(templateName string, data map[string]
 		b.logger.Error("Missing required template fields",
 			zap.String("template", templateName),
 			zap.Strings("missing", missing))
-		return fmt.Errorf("missing required template fields: %v", missing)
+		if len(missing) == 1 {
+			return fmt.Errorf("missing required field: %s", missing[0])
+		}
+		return fmt.Errorf("missing required fields: %v", missing)
 	}
 
 	return nil

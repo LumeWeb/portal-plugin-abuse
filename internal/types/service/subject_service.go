@@ -17,8 +17,11 @@ type SubjectService interface {
 	GetByID(id uint) (*models.Subject, error)
 
 	// FindOrCreate finds an existing subject or creates a new one
-	FindOrCreate(identifier string, subjectType models.SubjectType) (*models.Subject, error)
+	FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType) (*models.Subject, error)
+
+	// FindOrCreateByURL finds an existing subject by URL or creates a new one
+	FindOrCreateByURL(url string, subjectType models.SubjectType) (*models.Subject, error)
 
 	// List returns a list of subjects with filtering and pagination
-	List(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Subject, int64, error)
+	List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Subject, int64, error)
 }

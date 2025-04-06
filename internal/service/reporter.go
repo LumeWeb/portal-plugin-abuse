@@ -3,14 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
 	"go.lumeweb.com/queryutil"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 var (
@@ -28,15 +26,12 @@ var _ typesSvc.ReporterService = (*ReporterServiceDefault)(nil)
 // NewReporterService creates a new reporter service
 func NewReporterService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &ReporterServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // ID returns the service identifier
@@ -46,9 +41,12 @@ func (s *ReporterServiceDefault) ID() string {
 
 // Create creates a new reporter
 func (s *ReporterServiceDefault) Create(reporter *models.Reporter) (*models.Reporter, error) {
+	if err := reporter.Validate(); err != nil {
+		return nil, err
+	}
+
 	if err := db.Create(context.Background(), s.ctx, s.db, reporter); err != nil {
-		s.logger.Error("Failed to create reporter", zap.Error(err), zap.String("email", reporter.Email))
-		return nil, fmt.Errorf("failed to create reporter: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Reporter", 0)
 	}
 
 	return reporter, nil
@@ -58,11 +56,11 @@ func (s *ReporterServiceDefault) Create(reporter *models.Reporter) (*models.Repo
 func (s *ReporterServiceDefault) GetByID(id uint) (*models.Reporter, error) {
 	var reporter models.Reporter
 	if err := db.GetByID(context.Background(), s.ctx, s.db, id, &reporter); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("reporter not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to get reporter by ID", zap.Error(err), zap.Uint("id", id))
-		return nil, fmt.Errorf("failed to get reporter: %w", err)
+		return nil, db.HandleDBError(err, "GetByID", "Reporter", id)
 	}
 	return &reporter, nil
 }
@@ -81,24 +79,24 @@ func (s *ReporterServiceDefault) GetByEmail(email string) (*models.Reporter, err
 
 	err = db.GetByProperty(context.Background(), s.ctx, s.db, "email", email, reporter)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("reporter not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to fetch reporter by email", zap.Error(err), zap.String("email", email))
-		return nil, fmt.Errorf("failed to fetch reporter: %w", err)
+		return nil, db.HandleDBError(err, "GetByEmail", "Reporter", 0)
 	}
 
 	return reporter, nil
 }
 
 // List returns a list of reporters with filtering and pagination
-func (s *ReporterServiceDefault) List(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Reporter, int64, error) {
+func (s *ReporterServiceDefault) List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Reporter, int64, error) {
 	var reporters []models.Reporter
 	var total int64
 
 	if err := db.List(context.Background(), s.ctx, s.db, filters, sorts, pagination, &reporters, &total); err != nil {
 		s.logger.Error("Failed to list reporters", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to list reporters: %w", err)
+		return nil, 0, db.HandleDBError(err, "List", "Reporter", 0)
 	}
 
 	return reporters, total, nil
@@ -106,9 +104,14 @@ func (s *ReporterServiceDefault) List(filters []queryutil.Filter, sorts []queryu
 
 // Update updates a reporter
 func (s *ReporterServiceDefault) Update(reporter *models.Reporter) error {
-	if err := db.Update(context.Background(), s.ctx, s.db, reporter); err != nil {
-		s.logger.Error("Failed to update reporter", zap.Error(err), zap.Uint("reporterID", reporter.ID))
-		return fmt.Errorf("failed to update reporter: %w", err)
+	result := s.db.Model(reporter).Updates(reporter)
+	if result.Error != nil {
+		return db.HandleDBError(result.Error, "Update", "Reporter", reporter.ID)
+	}
+	
+	// Check if any rows were actually updated
+	if result.RowsAffected == 0 {
+		return db.ErrRecordNotFound
 	}
 
 	return nil

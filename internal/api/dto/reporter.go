@@ -4,6 +4,7 @@ import (
 	z "github.com/Oudwins/zog"
 	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
+	"time"
 )
 
 var _ httputil.DTOValidator = (*ReporterCreateRequest)(nil)
@@ -40,18 +41,18 @@ func (r *ReporterUpdateRequest) Schema() *z.StructSchema {
 
 // ReporterResponse represents the reporter data returned by the API
 type ReporterResponse struct {
-	BaseResponse
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	ID        uint      `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
 }
 
 // FromModel converts a model to a response DTO
 func (r *ReporterResponse) FromModel(reporter *models.Reporter) error {
-	r.BaseResponse = BaseResponse{
-		ID:        reporter.ID,
-		CreatedAt: reporter.CreatedAt,
-		UpdatedAt: reporter.UpdatedAt,
-	}
+	r.ID = reporter.ID
+	r.CreatedAt = reporter.CreatedAt
+	r.UpdatedAt = reporter.UpdatedAt
 	r.Email = reporter.Email
 	r.Name = reporter.Name
 	return nil

@@ -6,7 +6,6 @@ import (
 	"go.lumeweb.com/portal/core"
 	coreModels "go.lumeweb.com/portal/db/models"
 	"go.lumeweb.com/queryutil"
-	"time"
 )
 
 // BLOCKLIST_SERVICE is the service identifier for the blocklist service
@@ -31,7 +30,7 @@ type BlockListService interface {
 
 	// ListBlockedContent lists all blocked content with filtering and pagination
 	ListBlockedContent(
-		filters []queryutil.Filter,
+		filters []queryutil.CrudFilter,
 		sorts []queryutil.Sort,
 		pagination queryutil.Pagination,
 	) ([]models.BlockList, int64, error)
@@ -41,9 +40,18 @@ type BlockListService interface {
 
 	// BatchBlockFromScanResults creates block entries from scan results
 	// Returns the number of blocks created
-	BatchBlockFromScanResults(
-		ctx context.Context, scanResults []*coreModels.ScanResult, defaultReason string, defaultSeverity string, defaultAction string, source string) (int, error)
+	BatchBlockFromScanResults(ctx context.Context, scanResults []*coreModels.ScanResult, defaultReason models.BlockReason, defaultSeverity models.BlockSeverity, defaultAction models.BlockAction, source models.BlockSource) (int, error)
 
-	// GetBlocklistMetrics gets blocklist metrics within a date range
-	GetBlocklistMetrics(start, end time.Time) (*BlocklistAnalytics, error)
+	// GetBlocklistMetrics gets blocklist metrics with optional filters
+	GetBlocklistMetrics(filters []queryutil.CrudFilter) (*BlocklistAnalytics, error)
+
+	// GetBlockReasonCounts retrieves block reason counts within a time range.
+	GetBlockReasonCounts(filters []queryutil.CrudFilter) ([]BlockReasonCount, error)
+}
+
+// BlockReasonCount represents a single block reason count.
+type BlockReasonCount struct {
+	BlockDate   string
+	BlockReason string // String representation of BlockReason
+	BlockCount  int64
 }

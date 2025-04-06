@@ -20,12 +20,15 @@ import (
 // Import the pagination settings from the implementation file
 // Duplicated here just for convenient testing references
 var (
-	testDefaultPagination    = queryutil.Pagination{Start: 0, End: 10, PageSize: 10, Mode: "server"}
-	testLargePagination      = queryutil.Pagination{Start: 0, End: 100, PageSize: 100, Mode: "server"}
-	emailResponseQueryFilter = []queryutil.Filter{{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeEmail}, {Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeResponse}}
-	emailQueryFilter         = []queryutil.Filter{{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeEmail}}
-	emptyQueryFilter         = []queryutil.Filter(nil)
-	emptySortFilter          = []queryutil.Sort(nil)
+	testDefaultPagination    = queryutil.DefaultPagination
+	testLargePagination      = queryutil.LargePagination
+	emailResponseQueryFilter = queryutil.Or(
+		queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail)),
+		queryutil.StringField("type").Eq(string(models.CommunicationTypeResponse)),
+	)
+	emailQueryFilter = []queryutil.CrudFilter{queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail))}
+	emptyQueryFilter = []queryutil.CrudFilter(nil)
+	emptySortFilter  = []queryutil.Sort(nil)
 )
 
 // setupThreadDetectorTest creates a common test context with mocked services
@@ -130,11 +133,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 		// For subject similarity - no cases for this reporter
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -156,11 +159,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 		// For subject similarity - no cases for this reporter (to reach the end of the detection chain)
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -288,11 +291,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 		// Set up mock expectations - list cases for this reporter
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -338,11 +341,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 		// Set up mock expectations - list cases for this reporter
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -428,11 +431,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 				// Set up mock expectations - list cases for this reporter
 				mockCaseService.EXPECT().List(
-					mock.MatchedBy(func(filters []queryutil.Filter) bool {
+					mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 						if len(filters) != 1 {
 							return false
 						}
-						return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+						return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 					}),
 					mock.Anything,
 					testLargePagination,
@@ -509,11 +512,11 @@ func TestThreadDetector_DetectThread(t *testing.T) {
 
 		// For subject similarity and sender history - no cases for this reporter
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -697,11 +700,11 @@ func TestThreadDetector_ErrorHandling(t *testing.T) {
 
 		// Set up expectation for subject similarity check (next detection method)
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -736,11 +739,11 @@ func TestThreadDetector_ErrorHandling(t *testing.T) {
 
 		// Set up expectation for subject similarity check (next detection method)
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -772,11 +775,11 @@ func TestThreadDetector_ErrorHandling(t *testing.T) {
 
 		// Set up expectation for subject similarity check (next detection method)
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -818,11 +821,11 @@ func TestThreadDetector_ErrorHandling(t *testing.T) {
 
 		// Step 5: Subject similarity check - here we RECOVER and find a match
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,
@@ -867,11 +870,11 @@ func TestThreadDetector_ErrorHandling(t *testing.T) {
 
 		// Step 5: Subject similarity lookup fails
 		mockCaseService.EXPECT().List(
-			mock.MatchedBy(func(filters []queryutil.Filter) bool {
+			mock.MatchedBy(func(filters []queryutil.CrudFilter) bool {
 				if len(filters) != 1 {
 					return false
 				}
-				return filters[0].Field == "reporter_id" && filters[0].Operator == queryutil.OperatorEquals && filters[0].Value == uint(42)
+				return filters[0].GetField() == "reporter_id" && filters[0].GetOperator() == queryutil.OpEq && filters[0].GetValue() == uint(42)
 			}),
 			mock.Anything,
 			testLargePagination,

@@ -17,7 +17,9 @@ var _ httputil.DTOResponse[*core.ScanResult] = (*ScanResultResponse)(nil)
 
 // ScanResponse represents a scan operation response
 type ScanResponse struct {
-	BaseResponse
+	ID          uint       `json:"id"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 	CaseID      uint       `json:"case_id"`
 	SubjectID   uint       `json:"subject_id"`
 	Status      string     `json:"status"`
@@ -28,11 +30,9 @@ type ScanResponse struct {
 
 // FromModel converts a CaseScan model to a ScanResponse
 func (r *ScanResponse) FromModel(scan *models.CaseScan) error {
-	r.BaseResponse = BaseResponse{
-		ID:        scan.ID,
-		CreatedAt: scan.CreatedAt,
-		UpdatedAt: scan.UpdatedAt,
-	}
+	r.ID = scan.ID
+	r.CreatedAt = scan.CreatedAt
+	r.UpdatedAt = scan.UpdatedAt
 	r.CaseID = scan.CaseID
 	r.SubjectID = scan.SubjectID
 	r.Status = string(scan.Status)

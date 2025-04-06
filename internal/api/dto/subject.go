@@ -6,6 +6,7 @@ import (
 	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal/core"
+	"time"
 )
 
 var _ httputil.DTOValidator = (*SubjectCreateRequest)(nil)
@@ -48,17 +49,17 @@ func (r *SubjectUpdateRequest) Schema() *z.StructSchema {
 
 // SubjectResponse represents the subject data returned by the API
 type SubjectResponse struct {
-	BaseResponse
-	Identifier string `json:"identifier"`
+	ID         uint      `json:"id"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Identifier string    `json:"identifier"`
 }
 
 // FromModel converts a model to a response DTO
 func (r *SubjectResponse) FromModel(subject *models.Subject) error {
-	r.BaseResponse = BaseResponse{
-		ID:        subject.ID,
-		CreatedAt: subject.CreatedAt,
-		UpdatedAt: subject.UpdatedAt,
-	}
+	r.ID = subject.ID
+	r.CreatedAt = subject.CreatedAt
+	r.UpdatedAt = subject.UpdatedAt
 	r.Identifier = subject.Identifier.B58String()
 	return nil
 }

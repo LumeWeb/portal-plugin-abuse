@@ -6,24 +6,24 @@ import (
 	z "github.com/Oudwins/zog"
 )
 
-// Regular expression for valid confirmation numbers
-var confirmationNumberRegex = regexp.MustCompile(`^AR-[a-zA-Z0-9]{8}$`)
+// Regular expression for valid case references (12-char-uuid)
+var caseReferenceRegex = regexp.MustCompile(`^[A-Z0-9]{12}$`)
 
-// ConfirmationNumberSchema validates confirmation numbers
-var ConfirmationNumberSchema = z.String().TestFunc(func(v any, ctx z.Ctx) bool {
+// CaseReferenceSchema validates case references
+var CaseReferenceSchema = z.String().TestFunc(func(v any, ctx z.Ctx) bool {
 	s, ok := v.(*string)
 	if !ok {
 		return false
 	}
-	return confirmationNumberRegex.MatchString(*s)
-}, z.Message("Invalid confirmation number format"))
+	return caseReferenceRegex.MatchString(*s)
+}, z.Message("Invalid case reference format"))
 
 // EmailSchema validates email addresses with proper formatting
 var EmailSchema = z.String().Email()
 
-// IsValidConfirmationNumber checks if a confirmation number has a valid format
-func IsValidConfirmationNumber(confirmationNumber string) bool {
-	return confirmationNumberRegex.MatchString(confirmationNumber)
+// IsValidCaseReference checks if a case reference has a valid format
+func IsValidCaseReference(ref string) bool {
+	return caseReferenceRegex.MatchString(ref)
 }
 
 // FormatZogErrors converts zog validation errors to a user-friendly map

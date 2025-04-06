@@ -283,7 +283,7 @@ func (g *GmailTemplate) Process(ctx context.Context, email *letters.Email) error
 	}
 
 	for _, url := range subjectURLs {
-		subject, err := subjectService.FindOrCreate(url, models.SubjectTypeURL)
+		subject, err := subjectService.FindOrCreateByURL(url, models.SubjectTypeURL)
 		if err != nil {
 			g.logger.Error("Failed to create subject from URL", zap.Error(err), zap.String("url", url))
 			continue
@@ -415,7 +415,7 @@ func (g *GmailTemplate) ExtractCategory(email *letters.Email) models.CaseType {
 	if strings.Contains(content, "copyright") ||
 		strings.Contains(content, "DMCA") ||
 		strings.Contains(content, "infringement") {
-		return models.CaseTypeContent
+		return models.CaseTypeCopyrightViolation
 	}
 
 	if strings.Contains(content, "harassment") ||
@@ -560,7 +560,7 @@ func (m *MicrosoftTemplate) Process(ctx context.Context, email *letters.Email) e
 	}
 
 	for _, url := range subjectURLs {
-		subject, err := subjectService.FindOrCreate(url, models.SubjectTypeURL)
+		subject, err := subjectService.FindOrCreateByURL(url, models.SubjectTypeURL)
 		if err != nil {
 			m.logger.Error("Failed to create subject from URL", zap.Error(err), zap.String("url", url))
 			continue
@@ -690,7 +690,7 @@ func (m *MicrosoftTemplate) ExtractCategory(email *letters.Email) models.CaseTyp
 	if strings.Contains(content, "copyright") ||
 		strings.Contains(content, "DMCA") ||
 		strings.Contains(content, "infringement") {
-		return models.CaseTypeContent
+		return models.CaseTypeCopyrightViolation
 	}
 
 	if strings.Contains(content, "harassment") ||

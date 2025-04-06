@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
@@ -10,7 +9,6 @@ import (
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 // AbuseReportServiceDefault implements the AbuseReportService interface
@@ -27,35 +25,32 @@ var _ typesSvc.AbuseReportService = (*AbuseReportServiceDefault)(nil)
 // NewAbuseReportService creates a new abuse report service
 func NewAbuseReportService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &AbuseReportServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
 
 			// Get required services
 			caseService := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
 			if caseService == nil {
-				return ctx, fmt.Errorf("case service not available")
+				return fmt.Errorf("case service not available")
 			}
 			svc.caseService = caseService
 
 			reporterService := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
 			if reporterService == nil {
-				return ctx, fmt.Errorf("reporter service not available")
+				return fmt.Errorf("reporter service not available")
 			}
 			svc.reporterService = reporterService
 
 			subjectService := core.GetService[typesSvc.SubjectService](ctx, typesSvc.SUBJECT_SERVICE)
 			if subjectService == nil {
-				return ctx, fmt.Errorf("subject service not available")
+				return fmt.Errorf("subject service not available")
 			}
 			svc.subjectService = subjectService
 
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // ID returns the service identifier
@@ -74,7 +69,7 @@ func (s *AbuseReportServiceDefault) SubmitReport(_ context.Context, caseData *mo
 	// Check if reporter already exists
 	existingReporter, err := s.reporterService.GetByEmail(reporter.Email)
 	if err != nil {
-		if !errors.Is(err, fmt.Errorf("reporter not found")) {
+		if !db.IsRecordNotFound(err) {
 			s.logger.Error("Failed to get reporter by email", zap.Error(err), zap.String("email", reporter.Email))
 			return nil, fmt.Errorf("failed to get reporter by email: %w", err)
 		}
@@ -87,7 +82,7 @@ func (s *AbuseReportServiceDefault) SubmitReport(_ context.Context, caseData *mo
 		createdReporter, err := s.reporterService.Create(reporter)
 		if err != nil {
 			s.logger.Error("Failed to create reporter", zap.Error(err), zap.String("email", reporter.Email))
-			return nil, fmt.Errorf("failed to create reporter: %w", err)
+			return nil, db.HandleDBError(err, "Create", "Reporter", 0)
 		}
 		reporter = createdReporter
 	}
@@ -102,18 +97,20 @@ func (s *AbuseReportServiceDefault) SubmitReport(_ context.Context, caseData *mo
 	createdSubject, err := s.subjectService.Create(subject)
 	if err != nil {
 		s.logger.Error("Failed to create subject", zap.Error(err), zap.Stringer("identifier", subject.Identifier), zap.String("type", string(subject.Type)))
-		return nil, fmt.Errorf("failed to create subject: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Subject", 0)
 	}
 	subject = createdSubject
 
 	caseData.ReporterID = reporter.ID
 	caseData.SubjectID = subject.ID
+	caseData.Reporter = models.Reporter{}
+	caseData.Subject = models.Subject{}
 
 	// Create case through service to ensure notifications
 	createdCase, err := s.caseService.Create(caseData)
 	if err != nil {
 		s.logger.Error("Failed to create case", zap.Error(err), zap.Uint("reporterID", caseData.ReporterID), zap.Uint("subjectID", caseData.SubjectID))
-		return nil, fmt.Errorf("failed to create case: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Case", 0)
 	}
 	caseData = createdCase
 
@@ -130,30 +127,11 @@ func (s *AbuseReportServiceDefault) getCaseByReference(referenceNumber string) (
 	var caseModel models.Case
 	err := db.GetByProperty(context.Background(), s.ctx, s.db, "reference_number", referenceNumber, &caseModel)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("case not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to get case by reference number", zap.Error(err), zap.String("referenceNumber", referenceNumber))
-		return nil, fmt.Errorf("failed to get case: %w", err)
+		return nil, db.HandleDBError(err, "getCaseByReference", "Case", 0)
 	}
 	return &caseModel, nil
-}
-
-// MapAbuseCategoryToCaseType maps the abuse category to internal case type
-func (s *AbuseReportServiceDefault) MapAbuseCategoryToCaseType(category typesSvc.AbuseCategory) string {
-	switch category {
-	case typesSvc.AbuseCategoryMaliciousContent:
-		return string(models.CaseTypeContent)
-	case typesSvc.AbuseCategoryResourceAbuse:
-		return string(models.CaseTypeMalware)
-	case typesSvc.AbuseCategoryCopyrightViolation:
-		return string(models.CaseTypeContent)
-	case typesSvc.AbuseCategoryPhishingScam:
-		return string(models.CaseTypeMalware)
-	case typesSvc.AbuseCategoryOther:
-		return string(models.CaseTypeOther)
-	default:
-		s.logger.Warn("Unknown abuse category", zap.String("category", string(category)))
-		return string(models.CaseTypeOther)
-	}
 }
