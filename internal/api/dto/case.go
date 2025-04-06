@@ -2,18 +2,21 @@ package dto
 
 import (
 	z "github.com/Oudwins/zog"
+	"github.com/samber/lo"
 	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
+	"time"
 )
 
 var _ httputil.DTOValidator = (*CreateCaseRequest)(nil)
 var _ httputil.DTOValidator = (*UpdateCaseRequest)(nil)
 var _ httputil.DTORequest[*models.Case] = (*CreateCaseRequest)(nil)
 var _ httputil.DTOResponse[*models.Case] = (*CaseResponse)(nil)
+var _ httputil.DTOResponse[*models.Case] = (*PublicCaseResponse)(nil)
 
 // CaseCreateRequest represents the data needed to create a case
 type CreateCaseRequest struct {
-	BaseRequest
+	Description string `json:"description"`
 	Type        string `json:"type"`
 	Priority    string `json:"priority"`
 	Source      string `json:"source"`
@@ -65,10 +68,10 @@ func (req *UpdateCaseRequest) ToModel() (*models.Case, error) {
 
 func (r *CreateCaseRequest) Schema() *z.StructSchema {
 	return z.Struct(z.Schema{
-		"Type":        z.String().Required().OneOf([]string{string(models.CaseTypeSpam), string(models.CaseTypeHarassment), string(models.CaseTypeContent), string(models.CaseTypeMalware), string(models.CaseTypeOther)}),
+		"Type":        z.String().Required().OneOf(models.ValidCaseTypes),
 		"Description": z.String().Required().Min(10),
-		"Priority":    z.String().Optional().OneOf([]string{string(models.CasePriorityLow), string(models.CasePriorityMedium), string(models.CasePriorityHigh), string(models.CasePriorityCritical)}),
-		"Source":      z.String().Optional().OneOf([]string{string(models.ReportSourceWebForm), string(models.ReportSourceEmail), string(models.ReportSourceAPI)}),
+		"Priority":    z.String().Optional().OneOf(models.ValidCasePriorities),
+		"Source":      z.String().Optional().OneOf(models.ValidReportSources),
 		"NeedsReview": z.Bool().Optional(),
 		"ReporterID":  z.Int().Required().GT(0),
 		"SubjectID":   z.Int().Required().GT(0),
@@ -77,19 +80,21 @@ func (r *CreateCaseRequest) Schema() *z.StructSchema {
 
 func (r *UpdateCaseRequest) Schema() *z.StructSchema {
 	return z.Struct(z.Schema{
-		"Type":        z.Ptr(z.String().Optional().OneOf([]string{string(models.CaseTypeSpam), string(models.CaseTypeHarassment), string(models.CaseTypeContent), string(models.CaseTypeMalware), string(models.CaseTypeOther)})),
+		"Type":        z.Ptr(z.String().Optional().OneOf(models.ValidCaseTypes)),
 		"Description": z.Ptr(z.String().Optional().Min(10)),
-		"Priority":    z.Ptr(z.String().Optional().OneOf([]string{string(models.CasePriorityLow), string(models.CasePriorityMedium), string(models.CasePriorityHigh), string(models.CasePriorityCritical)})),
-		"Source":      z.Ptr(z.String().Optional().OneOf([]string{string(models.ReportSourceWebForm), string(models.ReportSourceEmail), string(models.ReportSourceAPI)})),
+		"Priority":    z.Ptr(z.String().Optional().OneOf(models.ValidCasePriorities)),
+		"Source":      z.Ptr(z.String().Optional().OneOf(models.ValidReportSources)),
 		"NeedsReview": z.Ptr(z.Bool().Optional()),
 		"ReporterID":  z.Ptr(z.Int().Optional().GT(0)),
 		"SubjectID":   z.Ptr(z.Int().Optional().GT(0)),
 	})
 }
 
-// CaseResponse represents the case data returned by the API
+// CaseResponse represents the full internal case data
 type CaseResponse struct {
-	BaseResponse
+	ID              uint                    `json:"id"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
 	ReferenceNumber string                  `json:"reference_number"`
 	Type            string                  `json:"type"`
 	Status          string                  `json:"status"`
@@ -101,6 +106,58 @@ type CaseResponse struct {
 	SubjectID       uint                    `json:"subject_id"`
 	Communications  []CommunicationResponse `json:"communications,omitempty"`
 	Scans           []ScanResponse          `json:"scans,omitempty"`
+}
+
+// PublicCaseResponse represents user-facing case data
+type PublicCaseResponse struct {
+	ReferenceNumber string                  `json:"reference_number"`
+	Status          string                  `json:"status"`
+	Type            string                  `json:"type"`
+	Description     string                  `json:"description"`
+	Communications  []CommunicationResponse `json:"communications,omitempty"`
+	Scans           []ScanResponse          `json:"scans,omitempty"`
+	Attachments     []EvidenceResponse      `json:"attachments,omitempty"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
+}
+
+// FromModel converts a Case model to a PublicCaseResponse DTO including related data
+func (r *PublicCaseResponse) FromModel(c *models.Case) error {
+	r.ReferenceNumber = c.ReferenceNumber
+	r.Status = string(c.Status)
+	r.Type = string(c.Type)
+	r.Description = c.Description
+	r.CreatedAt = c.CreatedAt
+	r.UpdatedAt = c.UpdatedAt
+
+	// Convert communications
+	r.Communications = lo.Map(c.Communications, func(comm models.Communication, _ int) CommunicationResponse {
+		var dtoComm CommunicationResponse
+		if err := dtoComm.FromModel(&comm); err != nil {
+			return CommunicationResponse{}
+		}
+		return dtoComm
+	})
+
+	// Convert scans
+	r.Scans = lo.Map(c.CaseScans, func(scan models.CaseScan, _ int) ScanResponse {
+		var scanDTO ScanResponse
+		if err := scanDTO.FromModel(&scan); err != nil {
+			return ScanResponse{}
+		}
+		return scanDTO
+	})
+
+	// Convert evidence to attachments
+	r.Attachments = lo.Map(c.Evidence, func(evidence models.Evidence, _ int) EvidenceResponse {
+		var evidenceDTO EvidenceResponse
+		if err := evidenceDTO.FromModel(&evidence); err != nil {
+			return EvidenceResponse{}
+		}
+		return evidenceDTO
+	})
+
+	return nil
 }
 
 // CaseStatusUpdateRequest represents a request to update a case's status
@@ -127,30 +184,28 @@ func (r *CaseStatusUpdateRequest) Schema() *z.StructSchema {
 
 // CaseStatusResponse represents the response after updating a case status
 type CaseStatusResponse struct {
-	BaseResponse
-	OldStatus string `json:"old_status"`
-	NewStatus string `json:"new_status"`
+	ID        uint      `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	OldStatus string    `json:"old_status"`
+	NewStatus string    `json:"new_status"`
 }
 
 // FromModel converts a Case model to a CaseStatusResponse
 func (r *CaseStatusResponse) FromModel(c *models.Case) error {
-	r.BaseResponse = BaseResponse{
-		ID:        c.ID,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
-	}
+	r.ID = c.ID
+	r.CreatedAt = c.CreatedAt
+	r.UpdatedAt = c.UpdatedAt
 	r.NewStatus = string(c.Status)
 	return nil
 }
 
 // FromModel converts a model to a response DTO
 func (r *CaseResponse) FromModel(c *models.Case) error {
-	r.BaseResponse = BaseResponse{
-		ID:        c.ID,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
-	}
-	r.ReferenceNumber = c.ReferenceNumber
+	r.ID = c.ID
+	r.CreatedAt = c.CreatedAt
+	r.UpdatedAt = c.UpdatedAt
+	r.ReferenceNumber = "CASE-" + c.ReferenceNumber // Ensure consistent prefix
 	r.Type = string(c.Type)
 	r.Status = string(c.Status)
 	r.Priority = string(c.Priority)

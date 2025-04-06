@@ -24,7 +24,7 @@ func TestNewClassifier(t *testing.T) {
 	assert.NotNil(t, classifier.logger, "Logger should be initialized")
 	assert.NotEmpty(t, SpamTerms, "Spam terms should be initialized")
 	assert.NotEmpty(t, HarassmentTerms, "Harassment terms should be initialized")
-	assert.NotEmpty(t, ContentTerms, "Content terms should be initialized")
+	assert.NotEmpty(t, CopyrightTerms, "Copyright terms should be initialized")
 	assert.NotEmpty(t, UrgencyPatterns, "Urgency patterns should be initialized")
 	assert.NotEmpty(t, SensitivePatterns, "Sensitive patterns should be initialized")
 	assert.NotEmpty(t, ThreatPatterns, "Threat patterns should be initialized")
@@ -34,7 +34,7 @@ func TestDictionaries(t *testing.T) {
 	// Check dictionary contents
 	assert.Contains(t, SpamTerms, "spam", "Spam terms should contain 'spam'")
 	assert.Contains(t, HarassmentTerms, "harass", "Harassment terms should contain 'harass'")
-	assert.Contains(t, ContentTerms, "copyright", "Content terms should contain 'copyright'")
+	assert.Contains(t, CopyrightTerms, "copyright", "Copyright terms should contain 'copyright'")
 	assert.Contains(t, UrgencyPatterns, "urgent", "Urgency patterns should contain 'urgent'")
 	assert.Contains(t, SensitivePatterns, "child", "Sensitive patterns should contain 'child'")
 	assert.Contains(t, ThreatPatterns, "threat", "Threat patterns should contain 'threat'")
@@ -42,7 +42,7 @@ func TestDictionaries(t *testing.T) {
 	// Check weights
 	assert.Equal(t, 2, SpamTerms["spam"], "Spam term 'spam' should have weight 2")
 	assert.Equal(t, 2, HarassmentTerms["harass"], "Harassment term 'harass' should have weight 2")
-	assert.Equal(t, 2, ContentTerms["copyright"], "Content term 'copyright' should have weight 2")
+	assert.Equal(t, 2, CopyrightTerms["copyright"], "Copyright term 'copyright' should have weight 2")
 	assert.Equal(t, 2, UrgencyPatterns["urgent"], "Urgency term 'urgent' should have weight 2")
 	assert.Equal(t, 3, SensitivePatterns["child"], "Sensitive term 'child' should have weight 3")
 	assert.Equal(t, 2, ThreatPatterns["threat"], "Threat term 'threat' should have weight 2")
@@ -254,7 +254,7 @@ func TestClassifier_needsReview(t *testing.T) {
 		{
 			name:           "Content type always needs review",
 			text:           "This is a content violation",
-			caseType:       models.CaseTypeContent,
+			caseType:       models.CaseTypeCopyrightViolation,
 			priority:       models.CasePriorityLow,
 			expNeedsReview: true,
 		},
@@ -340,7 +340,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 			expHasRiskyAttachments: false,
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeHarassment])
-				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeContent])
+				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeCopyrightViolation])
 			},
 		},
 		{
@@ -357,7 +357,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 			expHasRiskyAttachments: false,
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				assert.Greater(t, scores[models.CaseTypeHarassment], scores[models.CaseTypeSpam])
-				assert.Greater(t, scores[models.CaseTypeHarassment], scores[models.CaseTypeContent])
+				assert.Greater(t, scores[models.CaseTypeHarassment], scores[models.CaseTypeIllegalOrHarmfulContent])
 			},
 		},
 		{
@@ -367,14 +367,14 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 				"This is a DMCA takedown request regarding unauthorized use of my intellectual property. The rights holder requests immediate removal of infringing content that violates copyright law.",
 				"",
 			),
-			expType:                models.CaseTypeContent,
+			expType:                models.CaseTypeCopyrightViolation,
 			expPriority:            models.CasePriorityMedium, // Medium is the default
 			expNeedsReview:         true,
 			expIsMixedCategory:     false,
 			expHasRiskyAttachments: false,
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
-				assert.Greater(t, scores[models.CaseTypeContent], scores[models.CaseTypeSpam])
-				assert.Greater(t, scores[models.CaseTypeContent], scores[models.CaseTypeHarassment])
+				assert.Greater(t, scores[models.CaseTypeCopyrightViolation], scores[models.CaseTypeSpam])
+				assert.Greater(t, scores[models.CaseTypeCopyrightViolation], scores[models.CaseTypeHarassment])
 			},
 		},
 		{
@@ -384,7 +384,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 				"This is a high-priority report about an exploit that could compromise user data. The threat is abusive and targets our system. This could intimidate users.",
 				"",
 			),
-			expType:                models.CaseTypeHarassment,   // Based on the actual implementation behavior
+			expType:                models.CaseTypeHarassment,   // Correct - harassment terms dominate
 			expPriority:            models.CasePriorityCritical, // Based on the actual implementation behavior
 			expNeedsReview:         true,
 			expIsMixedCategory:     true, // Updated to match actual behavior - mixed category detection is now more sensitive
@@ -408,7 +408,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 			expHasRiskyAttachments: false,
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeHarassment])
-				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeContent])
+				assert.Greater(t, scores[models.CaseTypeSpam], scores[models.CaseTypeIllegalOrHarmfulContent])
 			},
 		},
 		{
@@ -426,7 +426,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				assert.Less(t, scores[models.CaseTypeSpam], 3)
 				assert.Less(t, scores[models.CaseTypeHarassment], 3)
-				assert.Less(t, scores[models.CaseTypeContent], 3)
+				assert.Less(t, scores[models.CaseTypeIllegalOrHarmfulContent], 3)
 			},
 		},
 		{
@@ -436,7 +436,7 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 				"This unsolicited bulk marketing email also contains copyright infringing content. The sender is using our intellectual property without permission in their spam campaign, with unauthorized use of our copyrighted materials in marketing emails.",
 				"",
 			),
-			expType:                models.CaseTypeContent, // Content should take precedence due to severity
+			expType:                models.CaseTypeCopyrightViolation, // Copyright violation should take precedence due to severity
 			expPriority:            models.CasePriorityMedium,
 			expNeedsReview:         true,
 			expIsMixedCategory:     true,
@@ -444,9 +444,9 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				// Both spam and content scores should be significant
 				assert.GreaterOrEqual(t, scores[models.CaseTypeSpam], 5)
-				assert.GreaterOrEqual(t, scores[models.CaseTypeContent], 5)
+				assert.GreaterOrEqual(t, scores[models.CaseTypeCopyrightViolation], 5)
 				// The difference should be relatively small
-				diff := scores[models.CaseTypeContent] - scores[models.CaseTypeSpam]
+				diff := scores[models.CaseTypeCopyrightViolation] - scores[models.CaseTypeSpam]
 				assert.LessOrEqual(t, diff, 5)
 			},
 		},
@@ -505,14 +505,14 @@ func TestClassifier_ClassifyEmail(t *testing.T) {
 				}
 				return email
 			}(),
-			expType:                models.CaseTypeContent,
+			expType:                models.CaseTypeCopyrightViolation,
 			expPriority:            models.CasePriorityMedium,
 			expNeedsReview:         true,
 			expIsMixedCategory:     false,
 			expHasRiskyAttachments: true, // Due to suspicious filenames only, not risky types
 			expScoreCheck: func(t *testing.T, scores map[models.CaseType]int) {
 				// Content score should be higher due to copyright attachment matches
-				assert.GreaterOrEqual(t, scores[models.CaseTypeContent], 7)
+				assert.GreaterOrEqual(t, scores[models.CaseTypeCopyrightViolation], 7)
 			},
 		},
 		{
@@ -814,14 +814,14 @@ func TestClassifier_ClassifyContentFromText(t *testing.T) {
 		{
 			name:               "Content violation text",
 			text:               "This is a copyright infringement notice about unauthorized use of intellectual property",
-			expType:            models.CaseTypeContent,
+			expType:            models.CaseTypeCopyrightViolation,
 			expPriority:        models.CasePriorityMedium, // Content violations always have at least medium priority
 			expIsMixedCategory: false,
 		},
 		{
 			name:               "Mixed category text (spam + content)",
 			text:               "This unsolicited bulk marketing email contains copyright infringement with unauthorized use of intellectual property in mass spam messages that violate DMCA takedown requirements.",
-			expType:            models.CaseTypeContent, // Content takes precedence
+			expType:            models.CaseTypeCopyrightViolation, // Copyright violation takes precedence
 			expPriority:        models.CasePriorityMedium,
 			expIsMixedCategory: true,
 		},

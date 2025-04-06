@@ -17,6 +17,4 @@ type AbuseReportService interface {
 	// GetReportStatus retrieves the status of a report by confirmation number
 	GetReportStatus(ctx context.Context, confirmationNumber string) (*models.Case, error)
 
-	// MapAbuseCategoryToCaseType maps the abuse category to internal case type
-	MapAbuseCategoryToCaseType(category AbuseCategory) string
 }

@@ -10,9 +10,10 @@ import (
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal-plugin-abuse/internal/service"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
-	_ "go.lumeweb.com/portal-testutil"
 	"go.lumeweb.com/portal/core"
 	coreService "go.lumeweb.com/portal/service"
+	"io/fs"
+	"os"
 )
 
 //go:embed templates/*.tpl
@@ -26,6 +27,28 @@ func init() {
 		panic(err)
 	}
 
+	var _fs fs.FS
+	var _reportFs fs.FS
+
+	envPath := os.Getenv("ABUSE_PLUGIN_BUNDLE_PATH")
+	reportEnvPath := os.Getenv("ABUSE_REPORT_PLUGIN_BUNDLE_PATH")
+
+	if envPath != "" {
+		_fs = core.NewWebBundleLiveFS(envPath)
+	}
+
+	if reportEnvPath != "" {
+		_reportFs = core.NewWebBundleLiveFS(reportEnvPath)
+	}
+
+	if _fs == nil {
+		panic("plugin: no plugin bundle found")
+	}
+
+	if _reportFs == nil {
+		panic("plugin: no plugin bundle found")
+	}
+
 	core.RegisterPlugin(core.PluginInfo{
 		ID:      internal.PLUGIN_NAME,
 		Version: build.GetInfo(),
@@ -36,7 +59,7 @@ func init() {
 		API: api.NewAbuseAPI,
 		APIExtensions: func(ctx core.Context) ([]core.APIExtensionFactory, error) {
 			return []core.APIExtensionFactory{
-				api.NewAdminExtension(ctx),
+				api.NewAdminExtension(),
 			}, nil
 		},
 		Models: []any{
@@ -73,23 +96,21 @@ func init() {
 					ID:      typesSvc.CASE_SERVICE,
 					Factory: service.NewCaseService,
 					Depends: []string{
-						typesSvc.REPORTER_SERVICE,
-						typesSvc.SUBJECT_SERVICE,
-						typesSvc.TOKEN_SERVICE,
 						core.HTTP_SERVICE,
 					},
 				},
 				{
 					ID:      typesSvc.COMMUNICATION_SERVICE,
 					Factory: service.NewCommunicationService,
-					Depends: []string{typesSvc.CASE_SERVICE},
+					Depends: []string{
+						typesSvc.CASE_SERVICE,
+						typesSvc.EMAIL_SERVICE,
+					},
 				},
 				{
 					ID:      typesSvc.EMAIL_SERVICE,
 					Factory: service.NewEmailService,
 					Depends: []string{
-						typesSvc.CASE_SERVICE,
-						typesSvc.COMMUNICATION_SERVICE,
 						core.MAILER_SERVICE,
 					},
 				},
@@ -112,14 +133,25 @@ func init() {
 					Factory: service.NewScanService,
 					Depends: []string{
 						typesSvc.CASE_SERVICE,
+						core.CONTENT_SCANNER_SERVICE,
+						typesSvc.SUBJECT_SERVICE,
+						typesSvc.REPORTER_SERVICE,
+						typesSvc.EMAIL_SERVICE,
 						core.WORKFLOW_SERVICE,
 						core.CRON_SERVICE,
+						core.STORAGE_SERVICE,
+						core.UPLOAD_SERVICE,
 					},
 				},
 				{
 					ID:      typesSvc.EVIDENCE_SERVICE,
 					Factory: service.NewEvidenceService,
-					Depends: []string{core.STORAGE_SERVICE},
+					Depends: []string{
+						core.STORAGE_SERVICE,
+						typesSvc.CASE_SERVICE,
+						typesSvc.REPORTER_SERVICE,
+						typesSvc.EMAIL_SERVICE,
+					},
 				},
 				{
 					ID:      typesSvc.SEARCH_SERVICE,
@@ -127,5 +159,6 @@ func init() {
 				},
 			}, nil
 		},
+		WebBundles: core.NewWebBundles(core.NewWebBundle(_fs, core.WithWebBundleTargetApps("admin")), core.NewWebBundle(_reportFs, core.WithWebBundleTargetApps("abuse"))),
 	})
 }

@@ -19,35 +19,35 @@ var _ httputil.DTOResponse[*models.BlockList] = (*BlockContentResponse)(nil)
 
 // BlockContentCreateRequest represents the request body for blocking content.
 type BlockContentCreateRequest struct {
-	Hash        string     `json:"hash"`
-	MimeType    string     `json:"mime_type,omitempty"`
-	FileName    string     `json:"file_name,omitempty"`
-	Size        int64      `json:"size,omitempty"`
-	UploaderID  *uint      `json:"uploader_id,omitempty"`
-	Reason      string     `json:"reason"`
-	Severity    string     `json:"severity"`
-	Action      string     `json:"action"`
-	Description string     `json:"description,omitempty"`
-	Source      string     `json:"source,omitempty"`
-	CaseID      *uint      `json:"case_id,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	Metadata    *string    `json:"metadata,omitempty"`
+	Hash        string               `json:"hash"`
+	MimeType    string               `json:"mime_type,omitempty"`
+	FileName    string               `json:"file_name,omitempty"`
+	Size        int64                `json:"size,omitempty"`
+	UploaderID  *uint                `json:"uploader_id,omitempty"`
+	Reason      models.BlockReason   `json:"reason"`
+	Severity    models.BlockSeverity `json:"severity"`
+	Action      models.BlockAction   `json:"action"`
+	Description string               `json:"description,omitempty"`
+	Source      models.BlockSource   `json:"source,omitempty"`
+	CaseID      *uint                `json:"case_id,omitempty"`
+	ExpiresAt   *time.Time           `json:"expires_at,omitempty"`
+	Metadata    *string              `json:"metadata,omitempty"`
 }
 
 // BlockContentUpdateRequest represents the request body for updating blocked content.
 type BlockContentUpdateRequest struct {
-	MimeType    *string         `json:"mime_type,omitempty"`
-	FileName    *string         `json:"file_name,omitempty"`
-	Size        *int64          `json:"size,omitempty"`
-	UploaderID  *uint           `json:"uploader_id,omitempty"`
-	Reason      *string         `json:"reason,omitempty"`
-	Severity    *string         `json:"severity,omitempty"`
-	Action      *string         `json:"action,omitempty"`
-	Description *string         `json:"description,omitempty"`
-	Source      *string         `json:"source,omitempty"`
-	CaseID      *uint           `json:"case_id,omitempty"`
-	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
-	Metadata    *datatypes.JSON `json:"metadata,omitempty"`
+	MimeType    *string               `json:"mime_type,omitempty"`
+	FileName    *string               `json:"file_name,omitempty"`
+	Size        *int64                `json:"size,omitempty"`
+	UploaderID  *uint                 `json:"uploader_id,omitempty"`
+	Reason      *models.BlockReason   `json:"reason,omitempty"`
+	Severity    *models.BlockSeverity `json:"severity,omitempty"`
+	Action      *models.BlockAction   `json:"action,omitempty"`
+	Description *string               `json:"description,omitempty"`
+	Source      *models.BlockSource   `json:"source,omitempty"`
+	CaseID      *uint                 `json:"case_id,omitempty"`
+	ExpiresAt   *time.Time            `json:"expires_at,omitempty"`
+	Metadata    *datatypes.JSON       `json:"metadata,omitempty"`
 }
 
 // ToModel converts the DTO to a BlockList model.
@@ -124,34 +124,34 @@ func (r *BlockContentCreateRequest) Schema() *z.StructSchema {
 		"FileName":   z.String().Optional(),
 		"Size":       z.Int64().Optional(),
 		"UploaderID": z.Ptr(z.Int().Optional()),
-		"Reason": z.String().Required().OneOf([]string{
-			string(models.BlockReasonMalware),
-			string(models.BlockReasonCsam),
-			string(models.BlockReasonCopyright),
-			string(models.BlockReasonHarassment),
-			string(models.BlockReasonHateSpeech),
-			string(models.BlockReasonSpam),
-			string(models.BlockReasonSystemPolicy),
-			string(models.BlockReasonManual),
+		"Reason": StringLike[models.BlockReason]().Required().OneOf([]models.BlockReason{
+			models.BlockReasonMalware,
+			models.BlockReasonCsam,
+			models.BlockReasonCopyright,
+			models.BlockReasonHarassment,
+			models.BlockReasonHateSpeech,
+			models.BlockReasonSpam,
+			models.BlockReasonSystemPolicy,
+			models.BlockReasonManual,
 		}),
-		"Severity": z.String().Required().OneOf([]string{
-			string(models.BlockSeverityCritical),
-			string(models.BlockSeverityHigh),
-			string(models.BlockSeverityMedium),
-			string(models.BlockSeverityLow),
+		"Severity": StringLike[models.BlockSeverity]().Required().OneOf([]models.BlockSeverity{
+			models.BlockSeverityCritical,
+			models.BlockSeverityHigh,
+			models.BlockSeverityMedium,
+			models.BlockSeverityLow,
 		}),
-		"Action": z.String().Required().OneOf([]string{
-			string(models.BlockActionReject),
-			string(models.BlockActionQuarantine),
-			string(models.BlockActionWarn),
-			string(models.BlockActionLog),
+		"Action": StringLike[models.BlockAction]().Required().OneOf([]models.BlockAction{
+			models.BlockActionReject,
+			models.BlockActionQuarantine,
+			models.BlockActionWarn,
+			models.BlockActionLog,
 		}),
 		"Description": z.String().Optional(),
-		"Source": z.String().Optional().OneOf([]string{
-			string(models.BlockSourceScanner),
-			string(models.BlockSourceReport),
-			string(models.BlockSourceAdmin),
-			string(models.BlockSourceExternal),
+		"Source": StringLike[models.BlockSource]().Optional().OneOf([]models.BlockSource{
+			models.BlockSourceScanner,
+			models.BlockSourceReport,
+			models.BlockSourceAdmin,
+			models.BlockSourceExternal,
 		}),
 		"CaseID":    z.Ptr(z.Int().Optional()),
 		"ExpiresAt": z.Ptr(z.Time().Optional()),
@@ -202,24 +202,24 @@ func (r *BlockContentUpdateRequest) Schema() *z.StructSchema {
 
 // BlockContentResponse represents the response body for blocked content.
 type BlockContentResponse struct {
-	ID          uint           `json:"id"`
-	Hash        string         `json:"hash"`
-	MimeType    string         `json:"mime_type,omitempty"`
-	FileName    string         `json:"file_name,omitempty"`
-	Size        uint64         `json:"size,omitempty"`
-	UploaderID  *uint          `json:"uploader_id,omitempty"`
-	Reason      string         `json:"reason"`
-	Severity    string         `json:"severity"`
-	Action      string         `json:"action"`
-	Description string         `json:"description,omitempty"`
-	BlockedBy   uint           `json:"blocked_by"`
-	Source      string         `json:"source,omitempty"`
-	CaseID      *uint          `json:"case_id,omitempty"`
-	ExpiresAt   *time.Time     `json:"expires_at,omitempty"`
-	ReviewedAt  *time.Time     `json:"reviewed_at,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	Metadata    datatypes.JSON `json:"metadata,omitempty"`
+	ID          uint                 `json:"id"`
+	Hash        string               `json:"hash"`
+	MimeType    string               `json:"mime_type,omitempty"`
+	FileName    string               `json:"file_name,omitempty"`
+	Size        uint64               `json:"size,omitempty"`
+	UploaderID  *uint                `json:"uploader_id,omitempty"`
+	Reason      models.BlockReason   `json:"reason"`
+	Severity    models.BlockSeverity `json:"severity"`
+	Action      models.BlockAction   `json:"action"`
+	Description string               `json:"description,omitempty"`
+	BlockedBy   uint                 `json:"blocked_by"`
+	Source      models.BlockSource   `json:"source,omitempty"`
+	CaseID      *uint                `json:"case_id,omitempty"`
+	ExpiresAt   *time.Time           `json:"expires_at,omitempty"`
+	ReviewedAt  *time.Time           `json:"reviewed_at,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+	Metadata    datatypes.JSON       `json:"metadata,omitempty"`
 }
 
 // FromModel converts a BlockList model to a DTO.

@@ -2,11 +2,15 @@ package dto
 
 import (
 	"fmt"
+	"go.lumeweb.com/httputil"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"strings"
 	"time"
 
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 )
+
+var _ httputil.DTOResponse[*typesSvc.StatusFlowGraph] = (*StatusFlowGraphResponse)(nil)
 
 type Distribution struct {
 	Name  string `json:"name"`
@@ -26,17 +30,17 @@ func (d *Distribution) FromUintID(id uint, count int64) {
 type ResolutionTrend struct {
 	Date           time.Time `json:"date"`
 	ResolvedCount  int64     `json:"resolved_count"`
-	AverageSeconds float64   `json:"average_seconds"`
+	AverageSeconds int64     `json:"average_seconds"`
 }
 
 type ResolutionMetrics struct {
-	AverageSeconds float64           `json:"average_seconds"`
+	AverageSeconds int64             `json:"average_seconds"`
 	DailyTrends    []ResolutionTrend `json:"daily_trends"`
 }
 
 type CommunicationsMetrics struct {
-	AverageResponseSeconds float64        `json:"average_response_seconds"`
-	MaxResponseSeconds     float64        `json:"max_response_seconds"`
+	AverageResponseSeconds int64          `json:"average_response_seconds"`
+	MaxResponseSeconds     int64          `json:"max_response_seconds"`
 	CountsPerCase          []Distribution `json:"counts_per_case"`
 }
 
@@ -56,8 +60,68 @@ type DurationDistribution struct {
 	Duration float64 `json:"duration_seconds"`
 }
 
+type StatusFlowGraphResponse struct {
+	Nodes []StatusFlowNode `json:"nodes"`
+	Links []StatusFlowLink `json:"links"`
+}
+
+var _ httputil.DTOResponse[[]models.CaseTypeSourceBreakdown] = (*CaseTypeSourceMatrixResponse)(nil)
+
+type CaseTypeSourceMatrixItemResponse struct {
+	CaseDate     string `json:"case_date"`
+	CaseType     string `json:"case_type"`
+	ReportSource string `json:"report_source"`
+	CaseCount    int64  `json:"case_count"`
+}
+
+type CaseTypeSourceMatrixResponse struct {
+	Items []CaseTypeSourceMatrixItemResponse `json:"items"`
+}
+
+func (r *CaseTypeSourceMatrixResponse) FromModel(models []models.CaseTypeSourceBreakdown) error {
+	r.Items = make([]CaseTypeSourceMatrixItemResponse, len(models))
+	for i, model := range models {
+		r.Items[i] = CaseTypeSourceMatrixItemResponse{
+			CaseDate:     model.CaseDate,
+			CaseType:     string(model.CaseType),
+			ReportSource: string(model.ReportSource),
+			CaseCount:    model.CaseCount,
+		}
+	}
+	return nil
+}
+
+type StatusFlowNode struct {
+	Name string `json:"name"`
+}
+
+type StatusFlowLink struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Value  int64  `json:"value"`
+}
+
+// FromModel converts a StatusFlowGraph model to a response DTO
+func (r *StatusFlowGraphResponse) FromModel(model *typesSvc.StatusFlowGraph) error {
+	r.Nodes = make([]StatusFlowNode, len(model.Nodes))
+	for i, node := range model.Nodes {
+		r.Nodes[i] = StatusFlowNode{
+			Name: node.Name,
+		}
+	}
+
+	r.Links = make([]StatusFlowLink, len(model.Links))
+	for i, link := range model.Links {
+		r.Links[i] = StatusFlowLink{
+			Source: link.Source,
+			Target: link.Target,
+			Value:  link.Value,
+		}
+	}
+	return nil
+}
+
 type CaseAnalyticsResponse struct {
-	BaseResponse
 	TotalCases            int64                  `json:"total_cases"`
 	OpenCases             int64                  `json:"open_cases"`
 	NewCases              int64                  `json:"new_cases"`
@@ -78,14 +142,13 @@ func (r *CaseAnalyticsResponse) FromModel(analytics *typesSvc.CaseAnalytics) err
 	r.OpenCases = analytics.OpenCases
 	r.NewCases = analytics.NewCasesInRange
 	r.NeedsReviewCount = analytics.NeedsReviewCount
-	r.ResolutionMetrics.AverageSeconds = analytics.AvgResolutionSeconds
+	r.ResolutionMetrics.AverageSeconds = int64(analytics.AvgResolutionSeconds)
 
 	r.StatusDistribution = convertDistribution(analytics.StatusBreakdown)
 	r.CaseTypeDistribution = convertDistribution(analytics.CaseTypeBreakdown)
 	r.SourceDistribution = convertDistribution(analytics.SourceBreakdown)
 
 	// Convert resolution trends
-	r.ResolutionMetrics.AverageSeconds = analytics.AvgResolutionSeconds
 	if analytics.ResolutionTrends != nil {
 		for date, count := range analytics.ResolutionTrends {
 			r.ResolutionMetrics.DailyTrends = append(r.ResolutionMetrics.DailyTrends, ResolutionTrend{
@@ -117,8 +180,8 @@ func (r *CaseAnalyticsResponse) FromModel(analytics *typesSvc.CaseAnalytics) err
 	} else {
 		r.CommunicationsMetrics.CountsPerCase = []Distribution{}
 	}
-	r.CommunicationsMetrics.AverageResponseSeconds = analytics.CommsMetrics.AvgResponseTime.Seconds()
-	r.CommunicationsMetrics.MaxResponseSeconds = analytics.CommsMetrics.MaxResponseTime.Seconds()
+	r.CommunicationsMetrics.AverageResponseSeconds = int64(analytics.CommsMetrics.AvgResponseTime.Seconds())
+	r.CommunicationsMetrics.MaxResponseSeconds = int64(analytics.CommsMetrics.MaxResponseTime.Seconds())
 
 	// Evidence metrics
 	if analytics.EvidenceMetrics.FilesPerCase != nil {

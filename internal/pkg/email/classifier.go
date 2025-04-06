@@ -71,8 +71,8 @@ var (
 		"coordinated attack": 3,
 	}
 
-	// Terms associated with content violations - with severity weights (1-3)
-	ContentTerms = map[string]int{
+	// Terms associated with illegal/harmful content - with severity weights (1-3)
+	IllegalOrHarmfulTerms = map[string]int{
 		// Weight 1 - Basic content concerns
 		"terms of service": 1, "violation": 1, "prohibited": 1,
 		"report content": 1, "inappropriate content": 1,
@@ -88,6 +88,56 @@ var (
 		"formal takedown": 3, "legal notice": 3, "cease and desist": 3,
 		"illegal material": 3, "prohibited content": 3, "rights violation": 3,
 		"content removal request": 3, "official dmca": 3, "legal action": 3,
+	}
+
+	// Terms associated with phishing - with severity weights (1-3)
+	PhishingTerms = map[string]int{
+		// Weight 1 - General security terms
+		"verify": 1, "account": 1, "login": 1, "password": 1,
+		"security": 1, "alert": 1, "suspicious": 1,
+
+		// Weight 2 - More specific phishing indicators
+		"phishing": 2, "credential": 2, "authentication": 2,
+		"verification": 2, "reset": 2, "urgent": 2,
+		"immediate": 2, "action required": 2,
+
+		// Weight 3 - Strong phishing signals
+		"password reset": 3, "account verification": 3,
+		"security alert": 3, "login attempt": 3,
+		"suspicious activity": 3, "unauthorized access": 3,
+	}
+
+	// Terms associated with copyright violations - with severity weights (1-3)
+	CopyrightTerms = map[string]int{
+		// Weight 1 - General copyright terms
+		"copyright": 1, "dmca": 1, "license": 1,
+		"rights": 1, "infringement": 1,
+
+		// Weight 2 - Specific violation terms
+		"takedown": 2, "cease and desist": 2,
+		"intellectual property": 2, "unauthorized use": 2,
+		"distribution": 2, "violation": 2,
+
+		// Weight 3 - Legal action terms
+		"copyright infringement": 3, "dmca notice": 3,
+		"legal action": 3, "court order": 3,
+		"lawsuit": 3, "settlement": 3,
+	}
+
+	// Terms associated with resource abuse - with severity weights (1-3)
+	ResourceAbuseTerms = map[string]int{
+		// Weight 1 - General resource terms
+		"resource": 1, "abuse": 1, "bandwidth": 1,
+		"consumption": 1, "utilization": 1,
+
+		// Weight 2 - Specific abuse patterns
+		"ddos": 2, "botnet": 2, "mining": 2,
+		"exploit": 2, "unauthorized": 2, "scraping": 2,
+
+		// Weight 3 - Severe abuse indicators
+		"cryptocurrency mining": 3, "command and control": 3,
+		"denial of service": 3, "brute force": 3,
+		"port scanning": 3, "traffic amplification": 3,
 	}
 
 	// Terms associated with malware and security threats - with severity weights (1-3)
@@ -314,12 +364,33 @@ var (
 			"This individual is stalking me online and making me feel unsafe.",
 			"Please help with this user who is sending hateful and discriminatory messages.",
 		},
-		models.CaseTypeContent: {
+		models.CaseTypeIllegalOrHarmfulContent: {
 			"This is a formal DMCA takedown request for copyright infringement of my intellectual property.",
 			"The user has uploaded content that violates my trademark rights.",
 			"I am the rights holder of this content and requesting its removal due to unauthorized use.",
 			"This is a notice of content policy violation regarding prohibited material.",
 			"We are requesting removal of this illegal content that violates terms of service.",
+		},
+		models.CaseTypePhishing: {
+			"Urgent: Your account needs verification!",
+			"Security Alert: Suspicious login detected",
+			"Important: Update your payment information",
+			"Account suspension notice - action required",
+			"Password reset required immediately",
+		},
+		models.CaseTypeCopyrightViolation: {
+			"Unauthorized distribution of copyrighted material",
+			"Notice of copyright infringement under DMCA",
+			"Cease and desist for unauthorized use",
+			"Takedown request for protected content",
+			"Formal notice of intellectual property violation",
+		},
+		models.CaseTypeResourceAbuse: {
+			"Abuse of hosting resources detected",
+			"Excessive bandwidth consumption alert",
+			"Unauthorized cryptocurrency mining",
+			"Distributed denial-of-service (DDoS) activity",
+			"Botnet command and control server detected",
 		},
 		models.CaseTypeMalware: {
 			"I've detected malware in this file that was uploaded to your platform.",
@@ -449,7 +520,7 @@ func (c *Classifier) initTfIdf() {
 	for term := range HarassmentTerms {
 		allDocs = append(allDocs, term)
 	}
-	for term := range ContentTerms {
+	for term := range IllegalOrHarmfulTerms {
 		allDocs = append(allDocs, term)
 	}
 
@@ -528,7 +599,10 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 	// Score from combined text (normal weight)
 	scores[models.CaseTypeSpam] = c.scoreCategory(combinedText, SpamTerms)
 	scores[models.CaseTypeHarassment] = c.scoreCategory(combinedText, HarassmentTerms)
-	scores[models.CaseTypeContent] = c.scoreCategory(combinedText, ContentTerms)
+	scores[models.CaseTypeIllegalOrHarmfulContent] = c.scoreCategory(combinedText, IllegalOrHarmfulTerms)
+	scores[models.CaseTypePhishing] = c.scoreCategory(combinedText, PhishingTerms)
+	scores[models.CaseTypeCopyrightViolation] = c.scoreCategory(combinedText, CopyrightTerms)
+	scores[models.CaseTypeResourceAbuse] = c.scoreCategory(combinedText, ResourceAbuseTerms)
 	scores[models.CaseTypeMalware] = c.scoreCategory(combinedText, MalwareTerms)
 
 	// Add additional score from subject (with higher weight for terms found in subject)
@@ -536,13 +610,19 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 		// Add subject scores with a higher weight multiplier
 		subjectSpamScore := c.scoreCategory(subjectText, SpamTerms)
 		subjectHarassmentScore := c.scoreCategory(subjectText, HarassmentTerms)
-		subjectContentScore := c.scoreCategory(subjectText, ContentTerms)
+		subjectContentScore := c.scoreCategory(subjectText, IllegalOrHarmfulTerms)
+		subjectPhishingScore := c.scoreCategory(subjectText, PhishingTerms)
+		subjectCopyrightScore := c.scoreCategory(subjectText, CopyrightTerms)
+		subjectResourceScore := c.scoreCategory(subjectText, ResourceAbuseTerms)
 		subjectMalwareScore := c.scoreCategory(subjectText, MalwareTerms)
 
 		// Apply a multiplier to subject scores because they're more significant
 		scores[models.CaseTypeSpam] += subjectSpamScore * c.options.WeightSubjectMultiplier
 		scores[models.CaseTypeHarassment] += subjectHarassmentScore * c.options.WeightSubjectMultiplier
-		scores[models.CaseTypeContent] += subjectContentScore * c.options.WeightSubjectMultiplier
+		scores[models.CaseTypeIllegalOrHarmfulContent] += subjectContentScore * c.options.WeightSubjectMultiplier
+		scores[models.CaseTypePhishing] += subjectPhishingScore * c.options.WeightSubjectMultiplier
+		scores[models.CaseTypeCopyrightViolation] += subjectCopyrightScore * c.options.WeightSubjectMultiplier
+		scores[models.CaseTypeResourceAbuse] += subjectResourceScore * c.options.WeightSubjectMultiplier
 		scores[models.CaseTypeMalware] += subjectMalwareScore * c.options.WeightSubjectMultiplier
 	}
 
@@ -560,7 +640,7 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 			// Calculate weighted scores
 			partSpamScore := float64(c.scoreCategory(partText, SpamTerms)) * part.Weight
 			partHarassmentScore := float64(c.scoreCategory(partText, HarassmentTerms)) * part.Weight
-			partContentScore := float64(c.scoreCategory(partText, ContentTerms)) * part.Weight
+			partContentScore := float64(c.scoreCategory(partText, IllegalOrHarmfulTerms)) * part.Weight
 			partMalwareScore := float64(c.scoreCategory(partText, MalwareTerms)) * part.Weight
 
 			// Only add significant scores from weighted parts
@@ -587,11 +667,11 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 			}
 
 			if partContentScore >= 1.0 {
-				scores[models.CaseTypeContent] += int(partContentScore)
+				scores[models.CaseTypeIllegalOrHarmfulContent] += int(partContentScore)
 
 				// Log strong content violation signals in the main content
 				if partContentScore > 3.0 && part.QuoteLevel == 0 && !part.IsSignature {
-					c.logger.Debug("Found strong content violation signal in new content",
+					c.logger.Debug("Found strong illegal/harmful content signal in new content",
 						zap.Float64("score", partContentScore),
 						zap.String("content_sample", truncate(partText, 50)))
 				}
@@ -716,12 +796,12 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 	// If two categories are very close, prefer the more severe one
 	if secondHighestScore > 0 && highestScore-secondHighestScore < c.options.ScoreCategoryDifference {
 		// If harassment and content are close, prefer harassment
-		if float64(scores[models.CaseTypeHarassment]) >= float64(scores[models.CaseTypeContent])*c.options.SimilarityScoreRatio &&
+		if float64(scores[models.CaseTypeHarassment]) >= float64(scores[models.CaseTypeIllegalOrHarmfulContent])*c.options.SimilarityScoreRatio &&
 			float64(scores[models.CaseTypeHarassment]) >= float64(scores[models.CaseTypeSpam])*c.options.SimilarityScoreRatio {
 			highestType = models.CaseTypeHarassment
-		} else if float64(scores[models.CaseTypeContent]) >= float64(scores[models.CaseTypeHarassment])*c.options.SimilarityScoreRatio &&
-			float64(scores[models.CaseTypeContent]) >= float64(scores[models.CaseTypeSpam])*c.options.SimilarityScoreRatio {
-			highestType = models.CaseTypeContent
+		} else if float64(scores[models.CaseTypeIllegalOrHarmfulContent]) >= float64(scores[models.CaseTypeHarassment])*c.options.SimilarityScoreRatio &&
+			float64(scores[models.CaseTypeIllegalOrHarmfulContent]) >= float64(scores[models.CaseTypeSpam])*c.options.SimilarityScoreRatio {
+			highestType = models.CaseTypeIllegalOrHarmfulContent
 		}
 	}
 
@@ -764,17 +844,17 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 		}
 
 		// Special handling for content violations with attachments that match content patterns
-		if highestType == models.CaseTypeContent {
+		if highestType == models.CaseTypeIllegalOrHarmfulContent {
 			for _, pattern := range nameMatches {
 				if strings.Contains(strings.ToLower(pattern), "copyright") ||
 					strings.Contains(strings.ToLower(pattern), "dmca") ||
 					strings.Contains(strings.ToLower(pattern), "takedown") ||
 					strings.Contains(strings.ToLower(pattern), "legal") {
 					// Found content violation with matching attachment - increase content score
-					scores[models.CaseTypeContent] += 5
+					scores[models.CaseTypeIllegalOrHarmfulContent] += 5
 					c.logger.Debug("Boosted content violation score due to matching attachment name",
 						zap.String("pattern", pattern),
-						zap.Int("new_score", scores[models.CaseTypeContent]))
+						zap.Int("new_score", scores[models.CaseTypeIllegalOrHarmfulContent]))
 					break
 				}
 			}
@@ -793,9 +873,22 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 	}
 
 	// Apply business rules for priority based on case type
-	// Content violations should be at least medium priority
-	if highestType == models.CaseTypeContent && priority == models.CasePriorityLow {
+	// Illegal/harmful content should be at least medium priority
+	if highestType == models.CaseTypeIllegalOrHarmfulContent && priority == models.CasePriorityLow {
 		priority = models.CasePriorityMedium
+	}
+
+	// Phishing and resource abuse should be high priority
+	if (highestType == models.CaseTypePhishing || highestType == models.CaseTypeResourceAbuse) &&
+		priority == models.CasePriorityMedium {
+		priority = models.CasePriorityHigh
+	}
+
+	// Copyright violations with legal terms should be high priority
+	if highestType == models.CaseTypeCopyrightViolation &&
+		scores[models.CaseTypeCopyrightViolation] > 15 &&
+		priority == models.CasePriorityMedium {
+		priority = models.CasePriorityHigh
 	}
 
 	// Check if the report needs manual review
@@ -869,7 +962,7 @@ func (c *Classifier) ClassifyEmail(email *letters.Email) *ClassificationResult {
 	// Set mixed category flag if we have multiple significant categories
 	// OR if we have a critical priority report with at least one significant category
 	if significantCategories >= 2 || (hasCriticalPriority && significantCategories >= 1 &&
-		(scores[models.CaseTypeHarassment] >= c.options.ScoreThreshold || scores[models.CaseTypeContent] >= c.options.ScoreThreshold)) {
+		(scores[models.CaseTypeHarassment] >= c.options.ScoreThreshold || scores[models.CaseTypeIllegalOrHarmfulContent] >= c.options.ScoreThreshold)) {
 		isMixedCategory = true
 
 		// Always mark mixed category reports for review
@@ -1202,8 +1295,12 @@ func (c *Classifier) needsReview(text string, caseType models.CaseType, priority
 		return true
 	}
 
-	// Content violations usually need review
-	if caseType == models.CaseTypeContent {
+	// These case types always need review
+	switch caseType {
+	case models.CaseTypeIllegalOrHarmfulContent,
+		models.CaseTypePhishing,
+		models.CaseTypeCopyrightViolation,
+		models.CaseTypeResourceAbuse:
 		return true
 	}
 
@@ -1222,7 +1319,7 @@ func (c *Classifier) needsReview(text string, caseType models.CaseType, priority
 	if caseType != models.CaseTypeOther {
 		spamScore := c.scoreCategory(text, SpamTerms)
 		harassmentScore := c.scoreCategory(text, HarassmentTerms)
-		contentScore := c.scoreCategory(text, ContentTerms)
+		contentScore := c.scoreCategory(text, IllegalOrHarmfulTerms)
 		malwareScore := c.scoreCategory(text, MalwareTerms)
 
 		// If two or more categories have significant scores
@@ -1250,7 +1347,7 @@ func (c *Classifier) needsReview(text string, caseType models.CaseType, priority
 		// For clarity, only skip review if spam score is significantly higher than other scores
 		spamScore := c.scoreCategory(text, SpamTerms)
 		harassmentScore := c.scoreCategory(text, HarassmentTerms)
-		contentScore := c.scoreCategory(text, ContentTerms)
+		contentScore := c.scoreCategory(text, IllegalOrHarmfulTerms)
 		malwareScore := c.scoreCategory(text, MalwareTerms)
 
 		if spamScore > (harassmentScore+contentScore+malwareScore)*2 {

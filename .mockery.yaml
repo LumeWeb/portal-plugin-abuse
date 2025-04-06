@@ -1,49 +1,44 @@
-# Abuse Plugin Mocks
-with-expecter: true
-resolve-type-alias: false
-disable-version-string: true
-issue-845-fix: true
-inpackage: false
-keeptree: false
 all: false
-mockname: "Mock{{.InterfaceName}}"
-filename: "mock_{{.InterfaceName}}.go" # This doesn't matter, the package config overrides it
-
+structname: Mock{{.InterfaceName}}
+template: testify
+filename: "{{.InterfaceName}}.go"
+template-data:
+  unroll-variadic: true
 packages:
-  go.lumeweb.com/portal-plugin-abuse/internal/types/service:
-    config:
-      dir: "internal/service/mocks"
-      outpkg: "mocks"
-      filename: "{{.InterfaceName}}.go"  # Unique filenames
-    interfaces:
-      EvidenceService: {}
-      BlockListService: {}
-      CaseService: {}
-      ReporterService: {}
-      SubjectService: {}
-      EmailService: {}
-      CommunicationService: {}
-      ScanService: {}
-      TokenService: {}
-      SearchService: {}
-      AbuseReportService: {}
-
   go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces:
     config:
-      dir: "internal/pkg/email/mocks"
-      outpkg: "emailmocks"
-      filename: "{{.InterfaceName}}.go"
+      dir: internal/pkg/email/mocks
+      pkgname: mocks
     interfaces:
+      ContentExtractor: {}
       IMAPClientConn: {}
       IMAPDialer: {}
-      EmailHandlerFunc: {}
-      ContentExtractor: {}
-
-  go.lumeweb.com/portal-plugin-abuse/internal/scanner:
+  go.lumeweb.com/portal-plugin-abuse/internal/pkg/email:
     config:
-      dir: "internal/scanner/mocks"
-      outpkg: "mocks"
-      filename: "{{.InterfaceName}}.go"
+      dir: internal/pkg/email/mocks
+      pkgname: mocks
     interfaces:
-      ScannerClient: {}
+      IMAPClient: {}
+  go.lumeweb.com/portal-plugin-abuse/internal/pkg/scanner:
+    config:
+      dir: internal/pkg/scanner/mocks
+      pkgname: mocks
+    interfaces:
       CoreStorageProtocolComposite: {}
+      ScannerClient: {}
+  go.lumeweb.com/portal-plugin-abuse/internal/types/service:
+    config:
+      dir: internal/service/mocks
+      pkgname: mocks
+    interfaces:
+      AbuseReportService: {}
+      BlockListService: {}
+      CaseService: {}
+      CommunicationService: {}
+      EmailService: {}
+      EvidenceService: {}
+      ReporterService: {}
+      ScanService: {}
+      SearchService: {}
+      SubjectService: {}
+      TokenService: {}

@@ -181,10 +181,11 @@ func (t *ThreadDetector) checkCaseReference(email *letters.Email) *ThreadMatch {
 			}
 
 			// Get the most recent communication for this case
-			filters := []queryutil.Filter{
-				{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeEmail},
-				{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeResponse},
-			}
+			filters := queryutil.Filters(
+				queryutil.Or(
+				queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail)),
+				queryutil.StringField("type").Eq(string(models.CommunicationTypeResponse)),
+			))
 			comms, _, err := communicationService.ListByCaseID(cases[0].ID, filters, nil, defaultPagination)
 			if err == nil && len(comms) > 0 {
 				return &ThreadMatch{
@@ -215,9 +216,9 @@ func (t *ThreadDetector) checkSubjectSimilarity(email *letters.Email, reporterID
 	}
 
 	// Find cases from this reporter
-	reporterFilter := []queryutil.Filter{
-		{Field: "reporter_id", Operator: queryutil.OperatorEquals, Value: reporterID},
-	}
+	reporterFilter := queryutil.Filters(
+		queryutil.NumberField[uint]("reporter_id").Eq(reporterID),
+	)
 	cases, total, err := caseService.List(reporterFilter, nil, largePagination)
 	if err != nil || total == 0 || len(cases) == 0 {
 		return nil
@@ -235,9 +236,7 @@ func (t *ThreadDetector) checkSubjectSimilarity(email *letters.Email, reporterID
 	// Check each case
 	for _, caseModel := range cases {
 		// Get communications for this case
-		filters := []queryutil.Filter{
-			{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeEmail},
-		}
+		filters := queryutil.Filters(queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail)))
 		comms, _, err := communicationService.ListByCaseID(caseModel.ID, filters, nil, defaultPagination)
 		if err != nil || len(comms) == 0 {
 			continue
@@ -305,9 +304,9 @@ func (t *ThreadDetector) checkSenderHistory(email *letters.Email, reporterID uin
 	}
 
 	// Find cases from this reporter
-	reporterFilter := []queryutil.Filter{
-		{Field: "reporter_id", Operator: queryutil.OperatorEquals, Value: reporterID},
-	}
+	reporterFilter := queryutil.Filters(
+		queryutil.NumberField[uint]("reporter_id").Eq(reporterID),
+	)
 	cases, total, err := caseService.List(reporterFilter, nil, largePagination)
 	if err != nil || total == 0 || len(cases) == 0 {
 		return nil
@@ -321,10 +320,10 @@ func (t *ThreadDetector) checkSenderHistory(email *letters.Email, reporterID uin
 		}
 
 		// Get communications for this case
-		filters := []queryutil.Filter{
-			{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeEmail},
-			{Field: "type", Operator: queryutil.OperatorEquals, Value: models.CommunicationTypeResponse},
-		}
+		filters := []queryutil.CrudFilter{queryutil.Or(
+			queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail)),
+			queryutil.StringField("type").Eq(string(models.CommunicationTypeResponse)),
+		)}
 		comms, _, err := communicationService.ListByCaseID(caseModel.ID, filters, nil, defaultPagination)
 		if err != nil || len(comms) == 0 {
 			continue

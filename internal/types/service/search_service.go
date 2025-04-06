@@ -24,10 +24,10 @@ type SearchService interface {
 	core.Service
 
 	// SearchCases performs a search across cases
-	SearchCases(ctx context.Context, query string, filters []queryutil.Filter, pagination queryutil.Pagination) ([]models.Case, int64, error)
+	SearchCases(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Case, int64, error)
 
 	// SearchReporters performs a search across reporters
-	SearchReporters(ctx context.Context, query string, filters []queryutil.Filter, pagination queryutil.Pagination) ([]models.Reporter, int64, error)
+	SearchReporters(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Reporter, int64, error)
 
 	// GlobalSearch performs a search across different entities
 	GlobalSearch(ctx context.Context, query string, pagination queryutil.Pagination) (*GlobalSearchResult, error)

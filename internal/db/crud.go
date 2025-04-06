@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -13,6 +14,100 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// Database error types
+var (
+	ErrRecordNotFound      = errors.New("record not found")
+	ErrDuplicateEntry      = errors.New("duplicate entry")
+	ErrConstraintViolation = errors.New("constraint violation")
+	ErrTransactionFailed   = errors.New("transaction failed")
+	ErrInvalidID           = errors.New("invalid ID")
+	ErrInvalidInput        = errors.New("invalid input")
+)
+
+// DBError wraps database errors with additional context
+type DBError struct {
+	Err         error
+	Operation   string
+	Entity      string
+	ID          uint
+	Constraints []string
+}
+
+func (e *DBError) Error() string {
+	return fmt.Sprintf("db error: %s (entity: %s, operation: %s)", e.Err.Error(), e.Entity, e.Operation)
+}
+
+func (e *DBError) Unwrap() error {
+	return e.Err
+}
+
+// HandleDBError handles and wraps database errors
+func HandleDBError(err error, operation, entity string, id uint) error {
+	if err == nil {
+		return nil
+	}
+
+	dbErr := &DBError{
+		Err:       err,
+		Operation: operation,
+		Entity:    entity,
+		ID:        id,
+	}
+
+	// Handle specific GORM errors
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrRecordNotFound
+	}
+
+	// Handle MySQL/SQLite specific errors using error message parsing
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "duplicate entry"):
+		return ErrDuplicateEntry
+	case strings.Contains(msg, "foreign key constraint"):
+		dbErr.Constraints = extractConstraints(msg)
+		return ErrConstraintViolation
+	case strings.Contains(msg, "constraint"):
+		dbErr.Constraints = extractConstraints(msg)
+		return ErrConstraintViolation
+	case strings.Contains(msg, "transaction"):
+		return ErrTransactionFailed
+	}
+
+	return dbErr
+}
+
+func extractConstraints(errorMsg string) []string {
+	constraints := make([]string, 0)
+	// Add logic to extract constraint names from error message if needed
+	return constraints
+}
+
+// Error helpers
+func IsRecordNotFound(err error) bool {
+	return errors.Is(err, ErrRecordNotFound)
+}
+
+func IsDuplicateEntry(err error) bool {
+	return errors.Is(err, ErrDuplicateEntry)
+}
+
+func IsConstraintViolation(err error) bool {
+	return errors.Is(err, ErrConstraintViolation)
+}
+
+func IsTransactionFailed(err error) bool {
+	return errors.Is(err, ErrTransactionFailed)
+}
+
+func GetDBError(err error) (*DBError, bool) {
+	var dbErr *DBError
+	if errors.As(err, &dbErr) {
+		return dbErr, true
+	}
+	return nil, false
+}
 
 // handleError centralizes error logging and wrapping.
 func handleError(_ core.Context, logger *core.Logger, operation string, err error, fields ...zap.Field) error {
@@ -139,7 +234,12 @@ func WithSearchQuery[T any](query string) ListOption {
 func Create[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, record *T, options ...DBOption) error {
 	_db = applyDbOptions(_db, options)
 	return ExecuteTransaction(ctx, coreCtx, _db, "Create", func(tx *gorm.DB) error {
-		return tx.Create(record).Error
+		err := tx.Create(record).Error
+		if err != nil {
+			var entity T
+			return HandleDBError(err, "Create", fmt.Sprintf("%T", entity), 0)
+		}
+		return nil
 	})
 }
 
@@ -148,11 +248,11 @@ func GetByID[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, id 
 	return ExecuteTransaction(ctx, coreCtx, _db, "GetByID", func(tx *gorm.DB) error {
 		_db = applyDbOptions(_db, options)
 		err := tx.First(record, id).Error
-		if err == gorm.ErrRecordNotFound {
-			coreCtx.Logger().Warn("Record not found", zap.Uint("id", id))
-			return fmt.Errorf("record not found") // Return this error to abort the transaction
+		if err != nil {
+			var entity T
+			return HandleDBError(err, "GetByID", fmt.Sprintf("%T", entity), id)
 		}
-		return err
+		return nil
 	}, zap.Uint("id", id))
 }
 
@@ -161,11 +261,11 @@ func GetByProperty[T any](ctx context.Context, coreCtx core.Context, _db *gorm.D
 	return ExecuteTransaction(ctx, coreCtx, _db, "GetByProperty", func(tx *gorm.DB) error {
 		_db = applyDbOptions(_db, options)
 		err := tx.Model(record).Where(property+" = ?", value).First(record).Error
-		if err == gorm.ErrRecordNotFound {
-			coreCtx.Logger().Warn("Record not found", zap.Any(property, value))
-			return fmt.Errorf("record not found")
+		if err != nil {
+			var entity T
+			return HandleDBError(err, "GetByProperty", fmt.Sprintf("%T", entity), 0)
 		}
-		return err
+		return nil
 	}, zap.String("property", property), zap.Any("value", value))
 }
 
@@ -175,15 +275,19 @@ func GetByProperties[T any](ctx context.Context, coreCtx core.Context, _db *gorm
 		_db = applyDbOptions(_db, options)
 		_db = tx.Model(record)
 		for property, value := range properties {
-			_db = _db.Where(property+" = ?", value)
+			if value == nil {
+				_db = _db.Where(fmt.Sprintf("%s IS NULL", property))
+			} else {
+				_db = _db.Where(property+" = ?", value)
+			}
 		}
 
 		err := _db.First(record).Error
-		if err == gorm.ErrRecordNotFound {
-			coreCtx.Logger().Warn("Record not found", zap.Any("properties", properties))
-			return fmt.Errorf("record not found")
+		if err != nil {
+			var entity T
+			return HandleDBError(err, "GetByProperties", fmt.Sprintf("%T", entity), 0)
 		}
-		return err
+		return nil
 	}, zap.Any("properties", properties))
 }
 
@@ -202,6 +306,20 @@ func Delete[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, id u
 		//GORM will automatically set the DeletedAt timestamp.
 		return tx.Delete(record, id).Error
 	}, zap.Uint("id", id))
+}
+
+// DeleteByProperty soft deletes a record by a property value
+func DeleteByProperty[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, property string, value any, record *T, options ...DBOption) error {
+	return ExecuteTransaction(ctx, coreCtx, _db, "DeleteByProperty", func(tx *gorm.DB) error {
+		_db = applyDbOptions(_db, options)
+		//GORM will automatically set the DeletedAt timestamp.
+		err := tx.Model(record).Where(property+" = ?", value).Delete(record).Error
+		if err != nil {
+			var entity T
+			return HandleDBError(err, "DeleteByProperty", fmt.Sprintf("%T", entity), 0)
+		}
+		return nil
+	}, zap.String("property", property), zap.Any("value", value))
 }
 
 // HardDelete permanently removes a record from the database.
@@ -226,7 +344,7 @@ func Undelete[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, id
 }
 
 // List retrieves a list of records from the database with filtering, sorting, and pagination.
-func List[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, total *int64, options ...ListOption) error {
+func List[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, total *int64, options ...ListOption) error {
 	return ExecuteTransaction(ctx, coreCtx, _db, "List", func(tx *gorm.DB) error {
 		// Apply options
 		for _, option := range options {
@@ -253,7 +371,7 @@ func List[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filter
 }
 
 // ListAggregate retrieves aggregated data without model-based counting
-func ListAggregate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, options ...ListOption) error {
+func ListAggregate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, options ...ListOption) error {
 	return ExecuteTransaction(ctx, coreCtx, _db, "ListAggregate", func(tx *gorm.DB) error {
 		// Apply options
 		for _, option := range options {
@@ -274,7 +392,7 @@ func ListAggregate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.D
 }
 
 // ListIncludingSoftDeleted retrieves a list of records, including soft-deleted records.
-func ListIncludingSoftDeleted[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, total *int64) error {
+func ListIncludingSoftDeleted[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination, records *[]T, total *int64) error {
 	return ExecuteTransaction(ctx, coreCtx, _db, "ListIncludingSoftDeleted", func(tx *gorm.DB) error {
 		tx = tx.Unscoped() //include soft deleted records
 		tx = queryutil.ApplyFilters(tx, filters, nil)
@@ -310,7 +428,7 @@ func BulkUpdate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, 
 }
 
 // Count retrieves the number of records in the database based on the provided filters.
-func Count[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.Filter, options ...DBOption) (int64, error) {
+func Count[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.CrudFilter, options ...DBOption) (int64, error) {
 	var count int64
 	err := ExecuteTransaction(ctx, coreCtx, _db, "Count", func(tx *gorm.DB) error {
 		_db = applyDbOptions(_db, options)

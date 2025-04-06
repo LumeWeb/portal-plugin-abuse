@@ -1,6 +1,12 @@
 Dear {{.ReporterName}},
 
-Use this secure link to access your case (#{{.CaseID}}) on {{.PortalName}}:
+Thank you for submitting your report to {{.PortalName}}. We've received it and will be reviewing it shortly.
+
+{{if .HighPriorityWarning}}
+**Priority Notice**: {{.PriorityReason}}. Our team is investigating this urgently.
+{{end}}
+
+Use this secure link to access your case (#{{.CaseID}}):
 
 {{.AccessURL}}
 

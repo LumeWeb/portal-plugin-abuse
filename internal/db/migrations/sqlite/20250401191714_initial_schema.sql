@@ -38,7 +38,8 @@ create table if not exists abuse_cases (
     deleted_at DATETIME,
     reference_number TEXT not null unique,
     type TEXT check (
-        type in ('spam', 'harassment', 'content', 'malware', 'other')
+        type in ('spam', 'harassment', 'malware', 'phishing', 'copyright_violation', 
+                'resource_abuse', 'illegal_or_harmful_content', 'other')
     ) not null,
     status TEXT check (
         status in ('new', 'in_progress', 'resolved', 'closed')
@@ -135,7 +136,7 @@ create table if not exists abuse_tokens (
     deleted_at DATETIME,
     case_id INTEGER not null,
     reporter_id INTEGER not null,
-    token BLOB(32) unique not null,
+    token token BLOB NOT NULL CHECK(LENGTH(token) = 32),
     expires_at DATETIME,
     revoked_at DATETIME,
     last_used_at DATETIME,
@@ -221,15 +222,111 @@ CREATE INDEX IF NOT EXISTS idx_case_status_histories_case_id
 CREATE INDEX IF NOT EXISTS idx_case_status_histories_changed_at 
     ON case_status_histories (changed_at);
 
+-- Case status duration view
+CREATE VIEW IF NOT EXISTS abuse_case_status_durations AS
+SELECT
+    case_id,
+    new_status,
+    SUM(JULIANDAY(next_changed_at) - JULIANDAY(changed_at)) * 86400 AS duration_seconds
+FROM (
+    SELECT
+        case_id,
+        new_status,
+        changed_at,
+        LEAD(changed_at, 1, strftime('%Y-%m-%d %H:%M:%S', 'now')) OVER (PARTITION BY case_id ORDER BY changed_at) AS next_changed_at
+    FROM case_status_histories
+) AS subquery
+GROUP BY case_id, new_status;
+
 -- Daily case resolution metrics
-CREATE VIEW IF NOT EXISTS abuse_daily_resolutions AS
+CREATE VIEW IF NOT EXISTS abuse_case_daily_resolutions AS
 SELECT 
     DATE(updated_at) AS resolution_date,
     COUNT(*) AS resolved_count,
-    AVG(JULIANDAY(updated_at) - JULIANDAY(created_at)) AS avg_resolution_days
+    AVG(JULIANDAY(updated_at) - JULIANDAY(created_at)) * 86400 AS avg_resolution_seconds
 FROM abuse_cases
 WHERE status IN ('resolved', 'closed')
 GROUP BY resolution_date;
+
+-- Case status distribution view
+CREATE VIEW IF NOT EXISTS abuse_case_status_breakdown AS
+SELECT 
+    status,
+    created_at,
+    COUNT(*) as count
+FROM abuse_cases
+GROUP BY status, created_at;
+
+-- Case type distribution view  
+CREATE VIEW IF NOT EXISTS abuse_case_type_breakdown AS
+SELECT
+    type,
+    created_at,
+    COUNT(*) as count
+FROM abuse_cases
+GROUP BY type, created_at;
+
+-- Case source distribution view
+CREATE VIEW IF NOT EXISTS abuse_case_source_breakdown AS
+SELECT
+    source,
+    created_at,
+    COUNT(*) as count
+FROM abuse_cases
+GROUP BY source, created_at;
+
+-- Case duration distribution view
+CREATE VIEW IF NOT EXISTS abuse_case_duration_distribution AS
+SELECT
+    status,
+    AVG(JULIANDAY(updated_at) - JULIANDAY(created_at)) * 86400 as duration,
+    COUNT(*) as case_count
+FROM abuse_cases
+GROUP BY status;
+
+-- Case status transitions view
+CREATE VIEW IF NOT EXISTS abuse_case_status_transitions AS
+SELECT
+    DATE(csh.changed_at) AS transition_date,
+    csh.changed_at AS changed_at,
+    csh.old_status AS from_status,
+    csh.new_status AS to_status,
+    csh.case_type AS case_type,
+    COUNT(*) AS transition_count
+FROM case_status_histories csh
+JOIN abuse_cases ac ON csh.case_id = ac.id
+WHERE ac.deleted_at IS NULL
+GROUP BY transition_date, csh.changed_at, csh.old_status, csh.new_status, csh.case_type;
+
+-- Case type/source breakdown view
+CREATE VIEW IF NOT EXISTS abuse_case_type_source_breakdown AS
+SELECT
+    DATE(created_at) AS case_date,
+    type AS case_type,
+    source AS report_source,
+    priority,
+    COUNT(*) AS case_count
+FROM abuse_cases
+WHERE deleted_at IS NULL
+GROUP BY case_date, type, source, priority;
+
+-- Communication hourly counts view
+CREATE VIEW IF NOT EXISTS abuse_communication_hourly_counts AS
+SELECT
+    strftime('%Y-%m-%d %H:00:00', created_at) AS hourly_interval,
+    COUNT(*) AS comm_count
+FROM abuse_communications
+GROUP BY hourly_interval;
+
+-- Block reason counts view
+CREATE VIEW IF NOT EXISTS abuse_block_reason_counts AS
+SELECT
+    DATE(created_at) AS block_date,
+    reason AS block_reason,
+    COUNT(*) AS block_count
+FROM abuse_blocklist
+GROUP BY block_date, reason;
+
 CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_subject_id
     ON abuse_case_scans (subject_id);
 CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_status_priority
@@ -237,10 +334,33 @@ CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_status_priority
 CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_scheduled_for
     ON abuse_case_scans (scheduled_for);
 
+-- Daily case metrics view for time-series analytics
+CREATE VIEW IF NOT EXISTS abuse_case_daily_metrics AS
+SELECT
+    DATE(created_at, 'utc') AS metric_date,
+    SUM(CASE WHEN status NOT IN ('closed', 'resolved') THEN 1 ELSE 0 END) AS open_cases,
+    SUM(CASE WHEN DATE(created_at, 'utc') = DATE('now', 'utc') THEN 1 ELSE 0 END) AS new_cases,
+    SUM(CASE WHEN status IN ('resolved', 'closed') AND DATE(updated_at, 'utc') = DATE('now', 'utc') THEN 1 ELSE 0 END) AS resolved_cases,
+    type AS case_type,
+    priority,
+    source
+FROM abuse_cases
+WHERE deleted_at IS NULL
+GROUP BY metric_date, case_type, priority, source;
 
 -- migrate:down
 
-DROP VIEW IF EXISTS abuse_daily_resolutions;
+DROP VIEW IF EXISTS abuse_case_daily_resolutions;
+DROP VIEW IF EXISTS abuse_case_status_transitions;
+DROP VIEW IF EXISTS abuse_case_type_source_breakdown;
+DROP VIEW IF EXISTS abuse_communication_hourly_counts;
+DROP VIEW IF EXISTS abuse_block_reason_counts;
+DROP VIEW IF EXISTS abuse_case_status_breakdown;
+DROP VIEW IF EXISTS abuse_case_type_breakdown;
+DROP VIEW IF EXISTS abuse_case_source_breakdown;
+DROP VIEW IF EXISTS abuse_case_duration_distribution;
+DROP VIEW IF EXISTS abuse_case_status_durations;
+DROP VIEW IF EXISTS abuse_case_daily_metrics;
 DROP TABLE IF EXISTS case_status_histories;
 DROP INDEX IF EXISTS idx_case_status_histories_case_id;
 DROP INDEX IF EXISTS idx_case_status_histories_changed_at;

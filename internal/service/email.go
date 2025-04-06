@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/mnako/letters"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/email"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
+	"go.lumeweb.com/portal/event"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"io"
@@ -28,6 +30,10 @@ type EmailServiceDefault struct {
 	subjectSvc  typesSvc.SubjectService
 }
 
+func (s *EmailServiceDefault) Config() (any, error) {
+	return &config.EmailConfig{}, nil
+}
+
 // determineCaseType maps ARF feedback types to case types
 func (s *EmailServiceDefault) determineCaseType(feedbackType string) models.CaseType {
 	switch strings.ToLower(feedbackType) {
@@ -36,7 +42,7 @@ func (s *EmailServiceDefault) determineCaseType(feedbackType string) models.Case
 	case "fraud":
 		return models.CaseTypeOther
 	case "virus":
-		return models.CaseTypeContent
+		return models.CaseTypeIllegalOrHarmfulContent
 	case "other":
 		return models.CaseTypeOther
 	case "not-spam":
@@ -89,83 +95,77 @@ var _ typesSvc.EmailService = (*EmailServiceDefault)(nil)
 // NewEmailService creates a new email service
 func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &EmailServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
 
 			// Get the email config from context
-			emailConfig, ok := ctx.Config().GetService(typesSvc.EMAIL_SERVICE).(*config.EmailConfig)
-			if !ok {
-				return ctx, fmt.Errorf("invalid or missing email config")
-			}
-
+			emailConfig := core.GetServiceConfig[*config.EmailConfig](ctx, typesSvc.EMAIL_SERVICE)
 			svc.config = emailConfig
 
-			// Get required services
-			mailerSvc := core.GetService[core.MailerService](ctx, core.MAILER_SERVICE)
-			caseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
-			commSvc := core.GetService[typesSvc.CommunicationService](ctx, typesSvc.COMMUNICATION_SERVICE)
-			reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
-			subjectSvc := core.GetService[typesSvc.SubjectService](ctx, typesSvc.SUBJECT_SERVICE)
+			event.Listen[*event.BootCompleteEvent](ctx, event.EVENT_BOOT_COMPLETE, func(evt *event.BootCompleteEvent) error {
+				ctx := evt.Context()
+				// Get required services
+				mailerSvc := core.GetService[core.MailerService](ctx, core.MAILER_SERVICE)
+				caseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
+				commSvc := core.GetService[typesSvc.CommunicationService](ctx, typesSvc.COMMUNICATION_SERVICE)
+				reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
+				subjectSvc := core.GetService[typesSvc.SubjectService](ctx, typesSvc.SUBJECT_SERVICE)
 
-			if mailerSvc == nil {
-				return ctx, fmt.Errorf("mailer service is not initialized")
-			}
+				if mailerSvc == nil {
+					return fmt.Errorf("mailer service is not initialized")
+				}
+				if caseSvc == nil {
+					return fmt.Errorf("case service is not initialized")
+				}
+				if commSvc == nil {
+					return fmt.Errorf("communication service is not initialized")
+				}
+				if reporterSvc == nil {
+					return db.ErrInvalidInput
+				}
+				if subjectSvc == nil {
+					return fmt.Errorf("subject service not available")
+				}
 
-			if caseSvc == nil {
-				return ctx, fmt.Errorf("case service is not initialized")
-			}
+				svc.mailer = mailerSvc
+				svc.caseSvc = caseSvc
+				svc.commSvc = commSvc
+				svc.reporterSvc = reporterSvc
+				svc.subjectSvc = subjectSvc
 
-			if commSvc == nil {
-				return ctx, fmt.Errorf("communication service is not initialized")
-			}
+				// Initialize pipeline components
+				contentExtractor := email.NewContentExtractor(svc.logger)
+				arfProcessor := email.NewARFProcessor(ctx, contentExtractor)
+				classifier := email.NewClassifier(ctx)
+				threadDetector := email.NewThreadDetector(ctx)
+				templateProcessor := email.NewTemplateProcessor(ctx, contentExtractor)
 
-			if reporterSvc == nil {
-				return ctx, fmt.Errorf("reporter service not available")
-			}
+				// Create pipeline with dependencies
+				pipeline := email.NewPipeline(
+					ctx,
+					arfProcessor,
+					classifier,
+					threadDetector,
+					templateProcessor,
+				)
 
-			if subjectSvc == nil {
-				return ctx, fmt.Errorf("subject service not available")
-			}
+				// Set config callback that uses our service config
+				pipeline.SetConfigCallback(func() *config.EmailConfig {
+					return svc.config
+				})
 
-			svc.mailer = mailerSvc
-			svc.caseSvc = caseSvc
-			svc.commSvc = commSvc
-			svc.reporterSvc = reporterSvc
-			svc.subjectSvc = subjectSvc
+				if err := pipeline.Start(svc.handleProcessedEmail); err != nil {
+					svc.pipeline = pipeline
+					return fmt.Errorf("failed to start pipeline: %w", err)
+				}
 
-			// Initialize pipeline components
-			contentExtractor := email.NewContentExtractor(svc.logger)
-			arfProcessor := email.NewARFProcessor(ctx, contentExtractor)
-			classifier := email.NewClassifier(ctx)
-			threadDetector := email.NewThreadDetector(ctx)
-			templateProcessor := email.NewTemplateProcessor(ctx, contentExtractor)
-
-			// Create pipeline with dependencies
-			pipeline := email.NewPipeline(
-				ctx,
-				arfProcessor,
-				classifier,
-				threadDetector,
-				templateProcessor,
-			)
-
-			// Set config callback that uses our service config
-			pipeline.SetConfigCallback(func() *config.EmailConfig {
-				return svc.config
+				return nil
 			})
 
-			if err := pipeline.Start(svc.handleProcessedEmail); err != nil {
-				svc.pipeline = pipeline
-				return ctx, fmt.Errorf("failed to start pipeline: %w", err)
-			}
-
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // ID returns the service identifier
@@ -197,13 +197,13 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 		var reporter *models.Reporter
 		if result.ARFData.ReporterEmail != "" {
 			reporter, err = s.reporterSvc.GetByEmail(result.ARFData.ReporterEmail)
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err != nil && !db.IsRecordNotFound(err) {
 				s.logger.Error("Failed to get reporter by email", zap.Error(err))
-				return fmt.Errorf("failed to get reporter by email: %w", err)
+				return db.HandleDBError(err, "GetByEmail", "Reporter", 0)
 			}
 
 			// If not found, create a new reporter
-			if reporter == nil || errors.Is(err, gorm.ErrRecordNotFound) {
+			if reporter == nil || db.IsRecordNotFound(err) {
 				reporter = &models.Reporter{
 					Email: result.ARFData.ReporterEmail,
 					Name:  result.ARFData.ReporterEmail,
@@ -211,19 +211,19 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 				reporter, err = s.reporterSvc.Create(reporter)
 				if err != nil {
 					s.logger.Error("Failed to create reporter", zap.Error(err))
-					return fmt.Errorf("failed to create reporter: %w", err)
+					return db.HandleDBError(err, "Create", "Reporter", 0)
 				}
 			}
 		} else {
 			// For ARF reports without reporter email, use generic
 			reporter, err = s.reporterSvc.GetByEmail("arf-report@automated.system")
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err != nil && !db.IsRecordNotFound(err) {
 				s.logger.Error("Failed to get generic reporter", zap.Error(err))
 				return fmt.Errorf("failed to get generic reporter: %w", err)
 			}
 
 			// If not found, create generic reporter
-			if reporter == nil || errors.Is(err, gorm.ErrRecordNotFound) {
+			if reporter == nil || db.IsRecordNotFound(err) {
 				reporter = &models.Reporter{
 					Email: "arf-report@automated.system",
 					Name:  "Automated ARF Report",
@@ -231,7 +231,7 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 				reporter, err = s.reporterSvc.Create(reporter)
 				if err != nil {
 					s.logger.Error("Failed to create generic reporter", zap.Error(err))
-					return fmt.Errorf("failed to create generic reporter: %w", err)
+					return db.HandleDBError(err, "Create", "Reporter", 0)
 				}
 			}
 		}
@@ -251,7 +251,7 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 		createdCase, err := s.caseSvc.Create(caseModel)
 		if err != nil {
 			s.logger.Error("Failed to create case", zap.Error(err))
-			return fmt.Errorf("failed to create case: %w", err)
+			return db.HandleDBError(err, "Create", "Case", 0)
 		}
 
 		// Create communication record
@@ -294,8 +294,7 @@ Feedback Text:
 		}
 
 		if _, err := s.commSvc.Create(comm); err != nil {
-			s.logger.Error("Failed to create communication", zap.Error(err))
-			return fmt.Errorf("failed to create communication: %w", err)
+			return db.HandleDBError(err, "handleThreadMatch", "Communication", 0)
 		}
 
 		// Extract and create subjects and link to case
@@ -325,7 +324,7 @@ Feedback Text:
 // ProcessIncomingEmail processes an incoming email through the pipeline
 func (s *EmailServiceDefault) ProcessIncomingEmail(ctx context.Context, rawEmail io.Reader) error {
 	_, err := s.pipeline.ProcessEmail(ctx, rawEmail)
-	return err
+	return db.HandleDBError(err, "ProcessIncomingEmail", "Email", 0)
 }
 
 // handleThreadMatch adds communication to an existing case
@@ -389,7 +388,7 @@ func (s *EmailServiceDefault) handleThreadMatch(ctx context.Context, match *emai
 // SendTemplatedEmail sends an email using a registered template to all recipients
 func (s *EmailServiceDefault) SendTemplatedEmail(to []string, templateName string, data core.MailerTemplateData) error {
 	if len(to) == 0 {
-		return fmt.Errorf("at least one recipient required")
+		return db.ErrInvalidInput
 	}
 
 	var finalErr error
@@ -451,7 +450,7 @@ func (s *EmailServiceDefault) extractAndCreateSubjects(ctx context.Context, case
 	contentExtractor := email.NewContentExtractor(s.logger)
 	urls := contentExtractor.ExtractURLs(feedbackEmail)
 	for _, url := range urls {
-		subject, err := s.subjectSvc.FindOrCreate(url, models.SubjectTypeURL)
+		subject, err := s.subjectSvc.FindOrCreateByURL(url, models.SubjectTypeURL)
 		if err != nil {
 			s.logger.Error("Failed to create subject from URL in feedback text",
 				zap.Error(err),
@@ -471,7 +470,13 @@ func (s *EmailServiceDefault) extractAndCreateSubjects(ctx context.Context, case
 	// Extract hashes from feedback text
 	hashes := contentExtractor.ExtractHashes(feedbackEmail)
 	for _, hash := range hashes {
-		subject, err := s.subjectSvc.FindOrCreate(hash, models.SubjectTypeHash)
+		sHash, err := core.ParseStorageHash(hash)
+		if err != nil {
+			s.logger.Error("Failed to create storage hash hash in feedback text",
+				zap.Error(err),
+				zap.String("hash", hash))
+		}
+		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash)
 		if err != nil {
 			s.logger.Error("Failed to create subject from hash in feedback text",
 				zap.Error(err),

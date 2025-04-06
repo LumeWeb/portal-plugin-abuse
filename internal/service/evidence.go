@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"go.lumeweb.com/portal-plugin-abuse/internal"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
@@ -34,42 +33,39 @@ var _ typesSvc.EvidenceService = (*EvidenceServiceDefault)(nil)
 // NewEvidenceService creates a new evidence service
 func NewEvidenceService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &EvidenceServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
 
 			// Get the storage service from context
 			storageService := core.GetService[core.StorageService](ctx, core.STORAGE_SERVICE)
 			if storageService == nil {
-				return ctx, fmt.Errorf("storage service not available")
+				return fmt.Errorf("storage service not available")
 			}
 			svc.storageService = storageService
 
 			// Get required services
 			caseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
 			if caseSvc == nil {
-				return ctx, fmt.Errorf("case service not available")
+				return fmt.Errorf("case service not available")
 			}
 			svc.caseSvc = caseSvc
 
 			reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
 			if reporterSvc == nil {
-				return ctx, fmt.Errorf("reporter service not available")
+				return fmt.Errorf("reporter service not available")
 			}
 			svc.reporterSvc = reporterSvc
 
 			emailSvc := core.GetService[typesSvc.EmailService](ctx, typesSvc.EMAIL_SERVICE)
 			if emailSvc == nil {
-				return ctx, fmt.Errorf("email service not available")
+				return fmt.Errorf("email service not available")
 			}
 			svc.emailSvc = emailSvc
 
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // ID returns the service identifier
@@ -82,7 +78,7 @@ func (s *EvidenceServiceDefault) CreateFromData(r io.ReadCloser, model *models.E
 	// First create the evidence record to get the ID
 	if err := db.Create(context.Background(), s.ctx, s.db, model); err != nil {
 		s.logger.Error("Failed to create evidence record", zap.Error(err))
-		return nil, fmt.Errorf("failed to create evidence record: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Evidence", 0)
 	}
 
 	// Generate structured object path
@@ -107,7 +103,7 @@ func (s *EvidenceServiceDefault) CreateFromData(r io.ReadCloser, model *models.E
 		s.logger.Error("Failed to store evidence data",
 			zap.Error(err),
 			zap.String("objectKey", objectKey))
-		return nil, fmt.Errorf("failed to store evidence data: %w", err)
+		return nil, db.HandleDBError(err, "StoreEvidence", "Evidence", model.ID)
 	}
 
 	// Update the model with storage location
@@ -116,7 +112,7 @@ func (s *EvidenceServiceDefault) CreateFromData(r io.ReadCloser, model *models.E
 		s.logger.Error("Failed to update evidence record with storage path",
 			zap.Error(err),
 			zap.String("objectKey", objectKey))
-		return nil, fmt.Errorf("failed to update evidence record: %w", err)
+		return nil, db.HandleDBError(err, "Update", "Evidence", model.ID)
 	}
 
 	go s.notifyEvidenceAdded(model)
@@ -140,7 +136,7 @@ func (s *EvidenceServiceDefault) notifyEvidenceAdded(evidence *models.Evidence) 
 		return
 	}
 
-	siteURL := core.GetService[core.HTTPService](s.ctx, core.HTTP_SERVICE).APISubdomain(internal.PLUGIN_NAME, true)
+	siteURL := core.GetService[core.HTTPService](s.ctx, core.HTTP_SERVICE).APISubdomain("admin", true)
 
 	err = s.emailSvc.SendTemplatedEmail(
 		[]string{reporter.Email},
@@ -193,7 +189,7 @@ func (s *EvidenceServiceDefault) CreateFromHash(
 
 	if err := db.Create(context.Background(), s.ctx, s.db, evidence); err != nil {
 		s.logger.Error("Failed to create evidence record", zap.Error(err), zap.String("storagePath", storagePath))
-		return nil, fmt.Errorf("failed to create evidence record: %w", err)
+		return nil, db.HandleDBError(err, "CreateFromHash", "Evidence", 0)
 	}
 
 	return evidence, nil
@@ -204,19 +200,24 @@ func (s *EvidenceServiceDefault) GetByID(id uint) (*models.Evidence, error) {
 	var evidence models.Evidence
 	if err := db.GetByID(context.Background(), s.ctx, s.db, id, &evidence); err != nil {
 		s.logger.Error("Failed to get evidence by ID", zap.Error(err), zap.Uint("evidenceID", id))
-		return nil, fmt.Errorf("failed to get evidence: %w", err)
+		return nil, db.HandleDBError(err, "GetByID", "Evidence", id)
 	}
 	return &evidence, nil
 }
 
 // List returns a list of evidence records with filtering, sorting and pagination
-func (s *EvidenceServiceDefault) List(filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Evidence, int64, error) {
+func (s *EvidenceServiceDefault) List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Evidence, int64, error) {
 	var evidence []models.Evidence
 	var total int64
 
+	// Default to newest first if no sorts specified
+	if len(sorts) == 0 {
+		sorts = []queryutil.Sort{{Field: "created_at", Order: queryutil.OrderDesc}}
+	}
+
 	if err := db.List(context.Background(), s.ctx, s.db, filters, sorts, pagination, &evidence, &total); err != nil {
 		s.logger.Error("Failed to list evidence", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to list evidence: %w", err)
+		return nil, 0, db.HandleDBError(err, "List", "Evidence", 0)
 	}
 
 	return evidence, total, nil
@@ -288,8 +289,8 @@ func (s *EvidenceServiceDefault) GetByCaseID(caseID uint, pagination queryutil.P
 	var evidenceList []models.Evidence
 	var total int64
 
-	filters := []queryutil.Filter{{Field: "case_id", Operator: queryutil.OperatorEquals, Value: caseID}}
-	sorts := []queryutil.Sort{{Field: "created_at", Order: queryutil.OrderDesc}}
+	filters := []queryutil.CrudFilter{queryutil.FieldEqual("case_id", caseID)}
+	sorts := []queryutil.Sort{{Field: "created_at", Order: queryutil.OrderAsc}}
 
 	if err := db.List(context.Background(), s.ctx, s.db, filters, sorts, pagination, &evidenceList, &total); err != nil {
 		s.logger.Error("Failed to list evidence", zap.Error(err), zap.Uint("caseID", caseID))
@@ -314,7 +315,7 @@ func (s *EvidenceServiceDefault) GetContent(id uint) (io.ReadCloser, string, err
 	reader, err := s.storageService.S3GetTemporaryUpload(s.ctx.GetContext(), nil, uploadID)
 	if err != nil {
 		s.logger.Error("Failed to retrieve evidence content", zap.Error(err), zap.String("uploadID", uploadID))
-		return nil, "", fmt.Errorf("failed to retrieve evidence content: %w", err)
+		return nil, "", db.HandleDBError(err, "GetContent", "Evidence", 0)
 	}
 	defer func(reader io.ReadCloser) {
 		err := reader.Close()

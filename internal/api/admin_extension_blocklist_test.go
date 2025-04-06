@@ -1,179 +1,206 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.lumeweb.com/portal-plugin-abuse/internal/api/dto"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal-plugin-abuse/internal/service/mocks"
-	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
+	"go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
-	coreMocks "go.lumeweb.com/portal/core/testing/mocks"
+	coreTesting "go.lumeweb.com/portal/core/testing"
 	"gorm.io/gorm"
-	"net/http"
-	"net/http/httptest"
-	"testing"
 )
 
 const (
 	exampleHashStr = "QmSnuWmxptJZdLJpKRarxBMS2Ju2oANVrgbr2xWbie9b2D"
 )
 
-func setupAdminBlocklistTest(t *testing.T) (*AdminExtension, *mocks.MockBlockListService, *mux.Router) {
-	ctx, adminExt, _ := setupAdminServices(t)
-	mockBlocklistSvc := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE).(*mocks.MockBlockListService)
-	accessSvc := core.GetService[core.AccessService](ctx, core.ACCESS_SERVICE).(*coreMocks.MockAccessService)
-
-	// Set up router
-	router := mux.NewRouter()
-	abuseRouter := router.PathPrefix("/admin/abuse").Subrouter()
-	err := adminExt.registerBlockListHandlers(abuseRouter, accessSvc)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return adminExt, mockBlocklistSvc, router
-}
-
 func TestCreateBlock_Success(t *testing.T) {
-	_, mockBlocklistSvc, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
 
-	exampleHash, _ := core.ParseStorageHash(exampleHashStr)
-	// Mock expectations
-	mockBlock := &models.BlockList{
-		Model:     gorm.Model{ID: 1},
-		Hash:      exampleHash.Multihash(),
-		Reason:    "malware",
-		Severity:  "critical",
-		Action:    "quarantine",
-		BlockedBy: 1,
-	}
-	mockBlocklistSvc.On("BlockContent", mock.AnythingOfType("*models.BlockList")).Return(mockBlock, nil)
+		exampleHash, err := core.ParseStorageHash(exampleHashStr)
+		if err != nil {
+			tb.Fatalf("Failed to parse hash: %v", err)
+		}
 
-	// Create valid request
-	reqBody := dto.BlockContentCreateRequest{
-		Hash:     exampleHash.Multihash().String(),
-		Reason:   "malware",
-		Severity: "critical",
-		Action:   "quarantine",
-	}
-	body, _ := json.Marshal(reqBody)
+		mockBlock := &models.BlockList{
+			Model:     gorm.Model{ID: 1},
+			Hash:      exampleHash.Multihash(),
+			Reason:    "malware",
+			Severity:  "critical",
+			Action:    "quarantine",
+			BlockedBy: 1,
+		}
 
-	req := httptest.NewRequest("POST", "/admin/abuse/blocklist", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+		mockBlocklistSvc.EXPECT().BlockContent(mock.MatchedBy(func(block *models.BlockList) bool {
+			return block.Reason == "malware" && block.Severity == "critical" && block.Action == "quarantine"
+		})).Return(mockBlock, nil).Once()
 
-	router.ServeHTTP(w, req)
+		reqBody := dto.BlockContentCreateRequest{
+			Hash:     exampleHashStr,
+			Reason:   "malware",
+			Severity: "critical",
+			Action:   "quarantine",
+		}
+		body, err := json.Marshal(reqBody)
+		assert.NoError(tb, err)
 
-	assert.Equal(t, http.StatusCreated, w.Code)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/abuse/blocklist", body)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	var response dto.BlockContentResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, "malware", response.Reason)
-	assert.Equal(t, "critical", response.Severity)
+		// Assert
+		assert.Equal(tb, http.StatusCreated, w.Code)
+
+		var response dto.BlockContentResponse
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.Equal(tb, models.BlockReasonMalware, response.Reason)
+		assert.Equal(tb, models.BlockSeverityCritical, response.Severity)
+	})
 }
 
 func TestCreateBlock_ValidationFailure(t *testing.T) {
-	_, _, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		reqBody := `{"reason": "invalid"}`
 
-	// Invalid request - missing required fields
-	reqBody := `{"reason": "invalid"}`
-	req := httptest.NewRequest("POST", "/admin/abuse/blocklist", bytes.NewReader([]byte(reqBody)))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+		// Act
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/abuse/blocklist", []byte(reqBody))
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		// Assert
+		assert.Equal(tb, http.StatusUnprocessableEntity, w.Code)
+	})
 }
 
 func TestGetBlockedContent_Success(t *testing.T) {
-	_, mockBlocklistSvc, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
 
-	// Mock expectations
-	exampleHash, _ := core.ParseStorageHash(exampleHashStr)
-	mockBlock := &models.BlockList{
-		Model:    gorm.Model{ID: 1},
-		Hash:     exampleHash.Multihash(),
-		Reason:   "copyright",
-		Severity: "high",
-	}
-	mockBlocklistSvc.On("GetBlockedContent", exampleHash).Return(mockBlock, nil)
+		exampleHash, err := core.ParseStorageHash(exampleHashStr)
+		if err != nil {
+			tb.Fatalf("Failed to parse hash: %v", err)
+		}
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/admin/abuse/blocklist/%s", exampleHash.Multihash().String()), nil)
-	w := httptest.NewRecorder()
+		mockBlock := &models.BlockList{
+			Model:    gorm.Model{ID: 1},
+			Hash:     exampleHash.Multihash(),
+			Reason:   "copyright",
+			Severity: "high",
+		}
 
-	router.ServeHTTP(w, req)
+		mockBlocklistSvc.EXPECT().GetBlockedContent(exampleHash).Return(mockBlock, nil).Once()
 
-	assert.Equal(t, http.StatusOK, w.Code)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, fmt.Sprintf("/api/abuse/blocklist/%s", exampleHashStr), nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	var response dto.BlockContentResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, "copyright", response.Reason)
-	assert.Equal(t, "high", response.Severity)
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
+
+		var response dto.BlockContentResponse
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.Equal(tb, models.BlockReasonCopyright, response.Reason)
+		assert.Equal(tb, models.BlockSeverityHigh, response.Severity)
+	})
 }
 
 func TestGetBlockedContent_NotFound(t *testing.T) {
-	_, mockBlocklistSvc, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
 
-	exampleHash, _ := core.ParseStorageHash(exampleHashStr)
-	mockBlocklistSvc.On("GetBlockedContent", exampleHash).Return(nil, gorm.ErrRecordNotFound)
+		exampleHash, err := core.ParseStorageHash(exampleHashStr)
+		if err != nil {
+			tb.Fatalf("Failed to parse hash: %v", err)
+		}
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/admin/abuse/blocklist/%s", exampleHash.Multihash().String()), nil)
-	w := httptest.NewRecorder()
+		mockBlocklistSvc.EXPECT().GetBlockedContent(exampleHash).Return(nil, gorm.ErrRecordNotFound).Once()
 
-	router.ServeHTTP(w, req)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, fmt.Sprintf("/api/abuse/blocklist/%s", exampleHashStr), nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+		// Assert
+		assert.Equal(tb, http.StatusNotFound, w.Code)
+	})
 }
 
 func TestListBlocks_Success(t *testing.T) {
-	_, mockBlocklistSvc, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
 
-	mockBlocks := []models.BlockList{
-		{Model: gorm.Model{ID: 1}, Reason: "malware"},
-		{Model: gorm.Model{ID: 2}, Reason: "copyright"},
-	}
-	mockBlocklistSvc.On("ListBlockedContent", mock.Anything, mock.Anything, mock.Anything).Return(mockBlocks, int64(2), nil)
+		mockBlocks := []models.BlockList{
+			{Model: gorm.Model{ID: 1}, Reason: "malware"},
+			{Model: gorm.Model{ID: 2}, Reason: "copyright"},
+		}
 
-	req := httptest.NewRequest("GET", "/admin/abuse/blocklist", nil)
-	w := httptest.NewRecorder()
+		mockBlocklistSvc.EXPECT().ListBlockedContent(mock.Anything, mock.Anything, mock.Anything).Return(mockBlocks, int64(2), nil).Once()
 
-	router.ServeHTTP(w, req)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/abuse/blocklist", nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
 
-	var response struct {
-		Data []dto.BlockContentResponse `json:"data"`
-	}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Len(t, response.Data, 2)
-	assert.Equal(t, "malware", response.Data[0].Reason)
+		var response struct {
+			Data []dto.BlockContentResponse `json:"data"`
+		}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.Len(tb, response.Data, 2)
+		assert.Equal(tb, models.BlockReasonMalware, response.Data[0].Reason)
+	})
 }
 
 func TestUnblockContent_Success(t *testing.T) {
-	_, mockBlocklistSvc, router := setupAdminBlocklistTest(t)
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
 
-	// Mock expectations
-	exampleHash, _ := core.ParseStorageHash(exampleHashStr)
-	mockBlock := &models.BlockList{
-		Model: gorm.Model{ID: 1},
-		Hash:  exampleHash.Multihash(),
-	}
-	mockBlocklistSvc.On("GetBlockedContent", exampleHash).Return(mockBlock, nil)
-	mockBlocklistSvc.On("UnblockContent", exampleHash).Return(nil)
+		exampleHash, err := core.ParseStorageHash(exampleHashStr)
+		if err != nil {
+			tb.Fatalf("Failed to parse hash: %v", err)
+		}
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/admin/abuse/blocklist/%s", exampleHash.Multihash().String()), nil)
-	w := httptest.NewRecorder()
+		mockBlock := &models.BlockList{
+			Model: gorm.Model{ID: 1},
+			Hash:  exampleHash.Multihash(),
+		}
 
-	router.ServeHTTP(w, req)
+		mockBlocklistSvc.EXPECT().GetBlockedContent(exampleHash).Return(mockBlock, nil).Once()
+		mockBlocklistSvc.EXPECT().UnblockContent(exampleHash).Return(nil).Once()
 
-	assert.Equal(t, http.StatusOK, w.Code)
+		// Act
+		req := ctx.NewAPIRequest(http.MethodDelete, fmt.Sprintf("/api/abuse/blocklist/%s", exampleHashStr), nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
+
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
+	})
 }

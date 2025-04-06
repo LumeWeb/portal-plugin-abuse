@@ -23,7 +23,7 @@ type ScanService interface {
 	SaveScanResults(scanID uint, results []*core.ScanResult) error
 
 	// GetScanResults retrieves the scan results
-	GetScanResults(scanID uint) ([]*core.ScanResult, error)
+	GetScanResults(scanID uint, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]*core.ScanResult, int64, error)
 
 	// UpdateScanStatus updates the status of a scan
 	UpdateScanStatus(scanID uint, status models.ScanStatus) error

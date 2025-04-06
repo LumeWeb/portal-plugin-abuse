@@ -5,6 +5,7 @@ import (
 	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"gorm.io/datatypes"
+	"time"
 )
 
 var _ httputil.DTOValidator = (*EvidenceCreateRequest)(nil)
@@ -34,7 +35,9 @@ type EvidenceUpdateRequest struct {
 
 // EvidenceResponse represents the evidence data returned by the API
 type EvidenceResponse struct {
-	BaseResponse
+	ID          uint                  `json:"id"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
 	CaseID      uint                  `json:"case_id"`
 	SubmitterID uint                  `json:"submitter_id"`
 	FileName    string                `json:"file_name"`
@@ -76,11 +79,9 @@ func (r *EvidenceUpdateRequest) Schema() *z.StructSchema {
 
 // FromModel converts a model to a response DTO
 func (r *EvidenceResponse) FromModel(evidence *models.Evidence) error {
-	r.BaseResponse = BaseResponse{
-		ID:        evidence.ID,
-		CreatedAt: evidence.CreatedAt,
-		UpdatedAt: evidence.UpdatedAt,
-	}
+	r.ID = evidence.ID
+	r.CreatedAt = evidence.CreatedAt
+	r.UpdatedAt = evidence.UpdatedAt
 	r.CaseID = evidence.CaseID
 	r.SubmitterID = evidence.SubmitterID
 	r.FileName = evidence.FileName

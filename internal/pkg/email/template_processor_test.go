@@ -500,7 +500,7 @@ func TestGmailTemplateExtractCategory(t *testing.T) {
 		{
 			name:             "copyright content",
 			content:          "This is a DMCA notice about copyright infringement",
-			expectedCategory: models.CaseTypeContent,
+			expectedCategory: models.CaseTypeCopyrightViolation,
 		},
 		{
 			name:             "harassment content",

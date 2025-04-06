@@ -2,16 +2,15 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"go.lumeweb.com/portal-plugin-abuse/internal"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
+	"go.lumeweb.com/portal-plugin-abuse/internal/util"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
 	"go.lumeweb.com/portal/core"
 	"go.lumeweb.com/queryutil"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 	"time"
 )
 
@@ -34,42 +33,39 @@ func (s *CommunicationServiceDefault) ID() string {
 // NewCommunicationService creates a new communication service
 func NewCommunicationService() (core.Service, []core.ContextBuilderOption, error) {
 	svc := &CommunicationServiceDefault{}
-
-	options := []core.ContextBuilderOption{
-		func(ctx core.Context) (core.Context, error) {
+	return svc, core.ContextOptions(
+		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
 
 			// Get required services
 			caseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
 			if caseSvc == nil {
-				return ctx, fmt.Errorf("case service not available")
+				return fmt.Errorf("case service not available")
 			}
 			svc.caseSvc = caseSvc
 
 			reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
 			if reporterSvc == nil {
-				return ctx, fmt.Errorf("reporter service not available")
+				return fmt.Errorf("reporter service not available")
 			}
 			svc.reporterSvc = reporterSvc
 
 			emailSvc := core.GetService[typesSvc.EmailService](ctx, typesSvc.EMAIL_SERVICE)
 			if emailSvc == nil {
-				return ctx, fmt.Errorf("email service not available")
+				return fmt.Errorf("email service not available")
 			}
 			svc.emailSvc = emailSvc
 
-			return ctx, nil
-		},
-	}
-
-	return svc, options, nil
+			return nil
+		}),
+	), nil
 }
 
 // Create adds a new communication
 func (s *CommunicationServiceDefault) Create(comm *models.Communication) (*models.Communication, error) {
 	if err := db.Create(context.Background(), s.ctx, s.db, comm); err != nil {
 		s.logger.Error("Failed to create communication", zap.Error(err))
-		return nil, fmt.Errorf("failed to create communication: %w", err)
+		return nil, db.HandleDBError(err, "Create", "Communication", 0)
 	}
 
 	// Send notifications async for user-facing comments
@@ -137,11 +133,11 @@ func (s *CommunicationServiceDefault) notifyNewComment(comm *models.Communicatio
 func (s *CommunicationServiceDefault) GetByID(id uint) (*models.Communication, error) {
 	var communication models.Communication
 	if err := db.GetByID(context.Background(), s.ctx, s.db, id, &communication); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("communication not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to get communication by ID", zap.Error(err), zap.Uint("communicationID", id))
-		return nil, fmt.Errorf("failed to get communication: %w", err)
+		return nil, db.HandleDBError(err, "GetByID", "Communication", id)
 	}
 	return &communication, nil
 }
@@ -151,27 +147,27 @@ func (s *CommunicationServiceDefault) GetByThreadID(threadID string) (*models.Co
 	var communication models.Communication
 	err := db.GetByProperty(context.Background(), s.ctx, s.db, "thread_id", threadID, &communication)
 	if err != nil {
-		if errors.Is(err, fmt.Errorf("record not found")) {
-			return nil, fmt.Errorf("communication not found")
+		if db.IsRecordNotFound(err) {
+			return nil, db.ErrRecordNotFound
 		}
 		s.logger.Error("Failed to fetch communication by thread ID", zap.Error(err), zap.String("threadID", threadID))
-		return nil, fmt.Errorf("failed to fetch communication by thread ID: %w", err)
+		return nil, db.HandleDBError(err, "GetByThreadID", "Communication", 0)
 	}
 	return &communication, nil
 }
 
 // ListByCaseID retrieves all communications for a case with filtering, sorting and pagination
-func (s *CommunicationServiceDefault) ListByCaseID(caseID uint, filters []queryutil.Filter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Communication, int64, error) {
+func (s *CommunicationServiceDefault) ListByCaseID(caseID uint, filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Communication, int64, error) {
 	var communications []models.Communication
 	var total int64
 
 	// Prepend case_id filter to ensure scope
-	caseFilter := queryutil.Filter{Field: "case_id", Operator: queryutil.OperatorEquals, Value: caseID}
-	combinedFilters := append([]queryutil.Filter{caseFilter}, filters...)
+	caseFilter := queryutil.Equal("case_id", caseID)
+	combinedFilters := queryutil.Filters(caseFilter, filters)
 
 	if err := db.List(context.Background(), s.ctx, s.db, combinedFilters, sorts, pagination, &communications, &total); err != nil {
 		s.logger.Error("Failed to list communications by case ID", zap.Error(err), zap.Uint("caseID", caseID))
-		return nil, 0, fmt.Errorf("failed to list communications: %w", err)
+		return nil, 0, db.HandleDBError(err, "ListByCaseID", "Communication", 0)
 	}
 
 	return communications, total, nil
@@ -181,7 +177,7 @@ func (s *CommunicationServiceDefault) ListByCaseID(caseID uint, filters []queryu
 func (s *CommunicationServiceDefault) Update(communication *models.Communication) error {
 	if err := db.Update(context.Background(), s.ctx, s.db, communication); err != nil {
 		s.logger.Error("Failed to update communication", zap.Error(err), zap.Uint("communicationID", communication.ID))
-		return fmt.Errorf("failed to update communication: %w", err)
+		return db.HandleDBError(err, "Update", "Communication", communication.ID)
 	}
 
 	return nil
@@ -211,7 +207,7 @@ func (s *CommunicationServiceDefault) GetCommunicationMetrics(start, end time.Ti
 		Group("case_id").
 		Scan(&counts).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to get comms per case: %w", err)
+		return nil, db.HandleDBError(err, "GetCommunicationMetrics", "Communication", 0)
 	}
 
 	for _, c := range counts {
@@ -220,8 +216,8 @@ func (s *CommunicationServiceDefault) GetCommunicationMetrics(start, end time.Ti
 
 	// Calculate response times
 	var responseStats []struct {
-		MinCreatedAt time.Time
-		MaxCreatedAt time.Time
+		MinCreatedAt string
+		MaxCreatedAt string
 		CaseID       uint
 	}
 
@@ -231,13 +227,29 @@ func (s *CommunicationServiceDefault) GetCommunicationMetrics(start, end time.Ti
 		Group("case_id").
 		Scan(&responseStats).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to get response times: %w", err)
+		return nil, db.HandleDBError(err, "GetCommunicationMetrics", "Communication", 0)
 	}
 
 	var totalDuration time.Duration
 	var maxDuration time.Duration
 	for _, stat := range responseStats {
-		duration := stat.MaxCreatedAt.Sub(stat.MinCreatedAt)
+		minTime, err := util.ParseTime(stat.MinCreatedAt)
+		if err != nil {
+			s.logger.Error("Failed to parse min created time", 
+				zap.String("time", stat.MinCreatedAt),
+				zap.Error(err))
+			continue
+		}
+
+		maxTime, err := util.ParseTime(stat.MaxCreatedAt)
+		if err != nil {
+			s.logger.Error("Failed to parse max created time",
+				zap.String("time", stat.MaxCreatedAt),
+				zap.Error(err))
+			continue
+		}
+
+		duration := maxTime.Sub(minTime)
 		totalDuration += duration
 		if duration > maxDuration {
 			maxDuration = duration
@@ -252,11 +264,46 @@ func (s *CommunicationServiceDefault) GetCommunicationMetrics(start, end time.Ti
 	return analytics, nil
 }
 
+func (s *CommunicationServiceDefault) GetCommunicationTimeline(timeRange string, filters []queryutil.CrudFilter) ([]models.CommunicationHourlyCount, error) {
+	// Calculate time range
+	startDate, endDate, err := util.ParseTimeRange(timeRange)
+	if err != nil {
+		return nil, util.ErrInvalidTimeRange
+	}
+
+	var timelineData []models.CommunicationHourlyCount
+
+	// Add time range filters
+	filters = append(filters,
+		queryutil.FieldGte("hourly_interval", startDate),
+		queryutil.FieldLte("hourly_interval", endDate),
+	)
+
+	var total int64
+	err = db.List[models.CommunicationHourlyCount](
+		context.Background(),
+		s.ctx,
+		s.db,
+		filters,
+		[]queryutil.Sort{{Field: "hourly_interval", Order: queryutil.OrderAsc}},
+		queryutil.Pagination{},
+		&timelineData,
+		&total,
+	)
+
+	if err != nil {
+		s.logger.Error("Failed to get communication timeline data", zap.Error(err), zap.String("timeRange", timeRange))
+		return nil, fmt.Errorf("failed to retrieve communication timeline data: %w", err)
+	}
+
+	return timelineData, nil
+}
+
 func (s *CommunicationServiceDefault) Delete(id uint) error {
 	var communication models.Communication
 	if err := db.Delete(context.Background(), s.ctx, s.db, id, &communication); err != nil {
 		s.logger.Error("Failed to delete communication", zap.Error(err), zap.Uint("communicationID", id))
-		return fmt.Errorf("failed to delete communication: %w", err)
+		return db.HandleDBError(err, "Delete", "Communication", id)
 	}
 
 	return nil

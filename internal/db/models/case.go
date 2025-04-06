@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"strings"
@@ -77,10 +78,10 @@ type Case struct {
 	RiskFactors          datatypes.JSON `gorm:"type:json"`
 
 	// Core References
-	ReporterID uint
+	ReporterID uint     `gorm:"index,column:reporter_id"`
 	Reporter   Reporter `gorm:"foreignKey:ReporterID"`
 
-	SubjectID uint
+	SubjectID uint    `gorm:"index,column:subject_id"`
 	Subject   Subject `gorm:"foreignKey:SubjectID"`
 
 	AssigneeID *uint
@@ -89,9 +90,10 @@ type Case struct {
 	LastActivityAt time.Time
 
 	// Related collections
-	Communications []Communication    `gorm:"foreignKey:CaseID"`
-	CaseScans      []CaseScan         `gorm:"foreignKey:CaseID"`
+	Communications []Communication     `gorm:"foreignKey:CaseID"`
+	CaseScans      []CaseScan          `gorm:"foreignKey:CaseID"`
 	StatusHistory  []CaseStatusHistory `gorm:"foreignKey:CaseID"`
+	Evidence       []Evidence          `gorm:"foreignKey:CaseID"`
 }
 
 // Validate validates a Case model
@@ -101,10 +103,9 @@ func (c *Case) Validate() error {
 		return fmt.Errorf("case type is required")
 	}
 
-	validTypes := map[CaseType]bool{
-		CaseTypeSpam:       true,
-		CaseTypeHarassment: true,
-		CaseTypeContent:    true,
+	validTypes := make(map[CaseType]bool)
+	for _, t := range ValidCaseTypes {
+		validTypes[CaseType(t)] = true
 	}
 
 	if !validTypes[c.Type] {
@@ -116,14 +117,7 @@ func (c *Case) Validate() error {
 		return fmt.Errorf("case status is required")
 	}
 
-	validStatuses := map[CaseStatus]bool{
-		CaseStatusNew:        true,
-		CaseStatusInProgress: true,
-		CaseStatusResolved:   true,
-		CaseStatusClosed:     true,
-	}
-
-	if !validStatuses[c.Status] && c.Status != "" {
+	if !ValidCaseStatusMap[c.Status] && c.Status != "" {
 		return fmt.Errorf("invalid case status: %s", c.Status)
 	}
 
@@ -132,14 +126,7 @@ func (c *Case) Validate() error {
 		return fmt.Errorf("case priority is required")
 	}
 
-	validPriorities := map[CasePriority]bool{
-		CasePriorityLow:      true,
-		CasePriorityMedium:   true,
-		CasePriorityHigh:     true,
-		CasePriorityCritical: true,
-	}
-
-	if !validPriorities[c.Priority] && c.Priority != "" {
+	if !ValidCasePriorityMap[c.Priority] && c.Priority != "" {
 		return fmt.Errorf("invalid case priority: %s", c.Priority)
 	}
 
@@ -149,10 +136,9 @@ func (c *Case) Validate() error {
 	}
 
 	// Validate Source
-	validSources := map[ReportSource]bool{
-		ReportSourceWebForm: true,
-		ReportSourceEmail:   true,
-		ReportSourceAPI:     true,
+	validSources := make(map[ReportSource]bool)
+	for _, s := range ValidReportSources {
+		validSources[ReportSource(s)] = true
 	}
 
 	if !validSources[c.Source] && string(c.Source) != "" {
@@ -178,14 +164,13 @@ func (c *Case) BeforeCreate(tx *gorm.DB) error {
 		return err
 	}
 
-	// Get the current timestamp to create a unique reference
-	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-	c.ReferenceNumber = fmt.Sprintf("CASE-%d", timestamp)
+	// Generate raw UUID reference without prefix
+	_uuid := strings.Replace(uuid.New().String(), "-", "", -1)
+	c.ReferenceNumber = _uuid[:12] // First 12 characters of UUID
 	c.LastActivityAt = time.Now()
 	return nil
 }
 
-// BeforeUpdate updates the LastActivityAt timestamp
 func (c *Case) BeforeUpdate(tx *gorm.DB) error {
 	if err := c.Validate(); err != nil {
 		return err
