@@ -2,13 +2,12 @@
 // github.com/vektra/mockery
 // template: testify
 
-package mocks
+package email
 
 import (
 	"crypto/tls"
 
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces"
 )
 
 // NewMockIMAPDialer creates a new instance of MockIMAPDialer. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -39,23 +38,23 @@ func (_m *MockIMAPDialer) EXPECT() *MockIMAPDialer_Expecter {
 }
 
 // DialTLS provides a mock function for the type MockIMAPDialer
-func (_mock *MockIMAPDialer) DialTLS(addr string, tlsConfig *tls.Config) (interfaces.IMAPClientConn, error) {
+func (_mock *MockIMAPDialer) DialTLS(addr string, tlsConfig *tls.Config) (IMAPClientConn, error) {
 	ret := _mock.Called(addr, tlsConfig)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DialTLS")
 	}
 
-	var r0 interfaces.IMAPClientConn
+	var r0 IMAPClientConn
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string, *tls.Config) (interfaces.IMAPClientConn, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string, *tls.Config) (IMAPClientConn, error)); ok {
 		return returnFunc(addr, tlsConfig)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string, *tls.Config) interfaces.IMAPClientConn); ok {
+	if returnFunc, ok := ret.Get(0).(func(string, *tls.Config) IMAPClientConn); ok {
 		r0 = returnFunc(addr, tlsConfig)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(interfaces.IMAPClientConn)
+			r0 = ret.Get(0).(IMAPClientConn)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(string, *tls.Config) error); ok {
@@ -96,12 +95,12 @@ func (_c *MockIMAPDialer_DialTLS_Call) Run(run func(addr string, tlsConfig *tls.
 	return _c
 }
 
-func (_c *MockIMAPDialer_DialTLS_Call) Return(iMAPClientConn interfaces.IMAPClientConn, err error) *MockIMAPDialer_DialTLS_Call {
+func (_c *MockIMAPDialer_DialTLS_Call) Return(iMAPClientConn IMAPClientConn, err error) *MockIMAPDialer_DialTLS_Call {
 	_c.Call.Return(iMAPClientConn, err)
 	return _c
 }
 
-func (_c *MockIMAPDialer_DialTLS_Call) RunAndReturn(run func(addr string, tlsConfig *tls.Config) (interfaces.IMAPClientConn, error)) *MockIMAPDialer_DialTLS_Call {
+func (_c *MockIMAPDialer_DialTLS_Call) RunAndReturn(run func(addr string, tlsConfig *tls.Config) (IMAPClientConn, error)) *MockIMAPDialer_DialTLS_Call {
 	_c.Call.Return(run)
 	return _c
 }

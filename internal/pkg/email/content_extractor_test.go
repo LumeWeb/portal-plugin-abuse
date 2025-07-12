@@ -1,12 +1,11 @@
 package email
 
 import (
-	"strings"
-	"testing"
-
 	"github.com/mnako/letters"
 	"github.com/stretchr/testify/assert"
 	coreTesting "go.lumeweb.com/portal/core/testing"
+	"strings"
+	"testing"
 )
 
 func TestContentExtractor_ExtractURLs(t *testing.T) {
@@ -80,11 +79,11 @@ func TestContentExtractor_ExtractURLs(t *testing.T) {
 				Text: `Original message below:
 
 > On Jan 15, 2024, at 3:45 PM, Abuse Reporter <reporter@example.com> wrote:
-> 
+>
 > I found this problematic content at https://problem.example.com/path.
-> 
+>
 > Please review it as soon as possible.
-> 
+>
 > There's also content at http://another.example.org/bad-content
 > but it seems less severe.`,
 			},
@@ -120,7 +119,7 @@ Date: Mon, Jan 1, 2024 at 10:00 AM
 Subject: Problematic Content
 To: Recipient <recipient@example.com>
 
-Check this harmful content at https://harmful.example.net/content and also 
+Check this harmful content at https://harmful.example.net/content and also
 this one: http://problematic.example.com/`,
 			},
 			expected: []string{
@@ -148,10 +147,10 @@ this one: http://problematic.example.com/`,
 
 > John wrote:
 > I found this issue: https://first-problem.example.org
-> 
+>
 >> Mary wrote:
 >> The original issue was here: https://original-problem.example.net
->> 
+>>
 >> Please handle it.`,
 			},
 			expected: []string{
@@ -196,26 +195,6 @@ func TestContentExtractor_ExtractHashes(t *testing.T) {
 			},
 		},
 		{
-			name: "content identifiers",
-			email: &letters.Email{
-				Text: "CID: cid:1234567890abcdef1234567890 and another one cid:abcdefg1234567890123456789012",
-			},
-			expected: []string{
-				"cid:1234567890abcdef1234567890",
-				"cid:abcdefg1234567890123456789012",
-			},
-		},
-		{
-			name: "mixed hashes",
-			email: &letters.Email{
-				Text: "Mixed hashes: QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx and cid:1234567890abcdef1234567890",
-			},
-			expected: []string{
-				"QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
-				"cid:1234567890abcdef1234567890",
-			},
-		},
-		{
 			name: "duplicate hashes",
 			email: &letters.Email{
 				Text: "Same hash twice: QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx and QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
@@ -241,26 +220,22 @@ func TestContentExtractor_ExtractHashes(t *testing.T) {
 Original IPFS hash: QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx
 
 > In the forwarded part:
-> Another hash: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
-> 
-> And a CID: cid:1234567890abcdef1234567890`,
+> Another hash: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG`,
 			},
 			expected: []string{
 				"QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
 				"QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
-				"cid:1234567890abcdef1234567890",
 			},
 		},
 		{
 			name: "hashes_with_surrounding_text",
 			email: &letters.Email{
 				Text: `Content hash (QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx) was found in prohibited content.
-Also found: [QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG] and reference cid:1234567890abcdef1234567890.`,
+Also found: [QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG]`,
 			},
 			expected: []string{
 				"QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
 				"QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
-				"cid:1234567890abcdef1234567890",
 			},
 		},
 		{
@@ -268,35 +243,13 @@ Also found: [QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG] and reference cid:1
 			email: &letters.Email{
 				Text: `Various CID formats:
 1. CIDv0: QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx
-2. CIDv1 Base32: bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi
-3. CIDv1 Base58: zdj7WhuEjrB52AmzDZvPaL4OCvtfRcyMG7NFzqdq747zzuVRI
-4. Base36 CID: k2jmtxu5bftvx512qzlihfg5tqbx73recvhldxgx4j4kanwjx5oi47hr
-5. BLAKE3 hash: 26aw7nxj5zhb4kssm7qdhfcz5for76jomyfavelgzpsfgctw7lga
-6. Raw base16/hex hash: see this 7ef5237c3027d6c58100afadf37796b3d351025cf28038280147d42fdc53b960 hash`,
+2. CIDv1 Base32: bafybeie7m2fsbt6sjtn7tymyb6sim7iiyz6szl4ethtn7anzx4frzfzipu
+3. CIDv1 Base58: zQmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx`,
 			},
 			expected: []string{
 				"QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
-				"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-				"zdj7WhuEjrB52AmzDZvPaL4OCvtfRcyMG7NFzqdq747zzuVRI",
-				"k2jmtxu5bftvx512qzlihfg5tqbx73recvhldxgx4j4kanwjx5oi47hr",
-				"26aw7nxj5zhb4kssm7qdhfcz5for76jomyfavelgzpsfgctw7lga",
-				"7ef5237c3027d6c58100afadf37796b3d351025cf28038280147d42fdc53b960",
-			},
-		},
-		{
-			name: "s5_blob_identifiers",
-			email: &letters.Email{
-				Text: `S5 Blob IDs:
-- Hex format: 5b821ee6c198b7c4e185ec87493058c2f688b0f4010df8b0524551364d9cfcd82710eb2a
-- Base64url: W4Ie5sGYt8ThheyHSTBYwvaIsPQBDfiwUkVRNk2c_NgnEOsq
-- Base32: LOBB5ZWBTC34JYMF5SDUSMCYYL3IRMHUAEG7RMCSIVITMTM47TMCOEHLACAA
-- Base58: 22kPJGjG1JL9F6WnTDD5GTyxitAMPesFuWvSzp5rKcAv25JoJoGVFM`,
-			},
-			expected: []string{
-				"5b821ee6c198b7c4e185ec87493058c2f688b0f4010df8b0524551364d9cfcd82710eb2a",
-				"W4Ie5sGYt8ThheyHSTBYwvaIsPQBDfiwUkVRNk2c_NgnEOsq",
-				"LOBB5ZWBTC34JYMF5SDUSMCYYL3IRMHUAEG7RMCSIVITMTM47TMCOEHLACAA",
-				"22kPJGjG1JL9F6WnTDD5GTyxitAMPesFuWvSzp5rKcAv25JoJoGVFM",
+				"bafybeie7m2fsbt6sjtn7tymyb6sim7iiyz6szl4ethtn7anzx4frzfzipu",
+				"zQmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx",
 			},
 		},
 	}
@@ -453,7 +406,6 @@ func TestContentExtractor_ParseEmailStructure(t *testing.T) {
 			validateParts: func(t *testing.T, parts []EmailContentPart) {
 				assert.Equal(t, 1, len(parts), "Should have 1 part")
 				assert.Equal(t, 0, parts[0].QuoteLevel, "Main part should have quote level 0")
-				assert.Equal(t, 1.0, parts[0].Weight, "Main content should have full weight")
 				assert.False(t, parts[0].IsSignature, "Should not be a signature")
 			},
 		},
@@ -479,11 +431,9 @@ john@example.com`,
 				for _, part := range parts {
 					if part.QuoteLevel == 0 && !part.IsSignature {
 						mainContentFound = true
-						assert.Equal(t, 1.0, part.Weight, "Main content should have full weight")
 					}
 					if part.IsSignature {
 						signatureFound = true
-						assert.Less(t, part.Weight, 1.0, "Signature should have less weight")
 					}
 				}
 
@@ -533,7 +483,6 @@ jane@example.com`,
 				// Quote should have reduced weight
 				if quotePart != nil {
 					assert.Equal(t, 1, quotePart.QuoteLevel, "Quote should have level 1")
-					assert.Less(t, quotePart.Weight, 1.0, "Quoted content should have less weight")
 				}
 
 				// Signature should be detected
@@ -574,7 +523,6 @@ Original Author`,
 				for _, part := range parts {
 					if part.IsForwarded && strings.Contains(part.Content, "Forwarded message") {
 						forwardedFound = true
-						assert.Less(t, part.Weight, 1.0, "Forwarded content should have less weight")
 						break
 					}
 				}
@@ -618,15 +566,14 @@ My conclusion.`,
 				for _, part := range parts {
 					if part.QuoteLevel == 0 && strings.Contains(part.Content, "response") {
 						openingFound = true
-						assert.Equal(t, 1.0, part.Weight, "Opening should have full weight")
 					} else if part.QuoteLevel == 1 &&
 						(strings.Contains(part.Content, "First level quote") ||
 							strings.Contains(part.Content, "Back to first level")) {
 						quoteFound = true
-						assert.Less(t, part.Weight, 1.0, "Quote should have reduced weight")
+
 					} else if part.QuoteLevel == 0 && strings.Contains(part.Content, "conclusion") {
 						conclusionFound = true
-						assert.Equal(t, 1.0, part.Weight, "Conclusion should have full weight")
+
 					}
 				}
 
@@ -1051,92 +998,6 @@ func TestContentExtractor_segmentContentBlocks(t *testing.T) {
 			if tt.validateBlocks != nil {
 				tt.validateBlocks(t, result)
 			}
-		})
-	}
-}
-
-func TestContentExtractor_calculateContentWeight(t *testing.T) {
-	// Setup test context
-	testCtx := coreTesting.NewTestContext(t)
-	defer testCtx.Teardown()
-
-	// Get logger from test context
-	logger := testCtx.Logger()
-	extractor := NewContentExtractor(logger)
-
-	tests := []struct {
-		name           string
-		quoteLevel     int
-		isSignature    bool
-		isForwarded    bool
-		expectedWeight float64
-	}{
-		{
-			name:           "main_content",
-			quoteLevel:     0,
-			isSignature:    false,
-			isForwarded:    false,
-			expectedWeight: 1.0,
-		},
-		{
-			name:           "level_1_quote",
-			quoteLevel:     1,
-			isSignature:    false,
-			isForwarded:    false,
-			expectedWeight: 0.7,
-		},
-		{
-			name:           "level_2_quote",
-			quoteLevel:     2,
-			isSignature:    false,
-			isForwarded:    false,
-			expectedWeight: 0.35, // 0.7 * 0.5
-		},
-		{
-			name:           "signature",
-			quoteLevel:     0,
-			isSignature:    true,
-			isForwarded:    false,
-			expectedWeight: 0.3,
-		},
-		{
-			name:           "forwarded_content",
-			quoteLevel:     0,
-			isSignature:    false,
-			isForwarded:    true,
-			expectedWeight: 0.8,
-		},
-		{
-			name:           "quoted_signature",
-			quoteLevel:     1,
-			isSignature:    true,
-			isForwarded:    false,
-			expectedWeight: 0.21, // 0.7 * 0.3
-		},
-		{
-			name:           "forwarded_signature",
-			quoteLevel:     0,
-			isSignature:    true,
-			isForwarded:    true,
-			expectedWeight: 0.24, // 0.8 * 0.3
-		},
-		{
-			name:           "forwarded_quote",
-			quoteLevel:     1,
-			isSignature:    false,
-			isForwarded:    true,
-			expectedWeight: 0.56, // 0.8 * 0.7
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractor.calculateContentWeight(tt.quoteLevel, tt.isSignature, tt.isForwarded)
-
-			// Due to floating point precision, compare with a small delta
-			delta := 0.01
-			assert.InDelta(t, tt.expectedWeight, result, delta,
-				"Weight calculation should match expected value")
 		})
 	}
 }

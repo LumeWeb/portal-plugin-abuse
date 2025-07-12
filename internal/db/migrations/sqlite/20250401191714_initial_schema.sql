@@ -1,4 +1,5 @@
--- migrate:up
+-- +goose Up
+-- +goose StatementBegin
 
 -- Stores information about individuals/organizations reporting abuse cases
 -- Includes contact info and optional user system linkage
@@ -291,24 +292,23 @@ SELECT
     csh.changed_at AS changed_at,
     csh.old_status AS from_status,
     csh.new_status AS to_status,
-    csh.case_type AS case_type,
+    ac.type AS case_type,
     COUNT(*) AS transition_count
 FROM case_status_histories csh
 JOIN abuse_cases ac ON csh.case_id = ac.id
 WHERE ac.deleted_at IS NULL
-GROUP BY transition_date, csh.changed_at, csh.old_status, csh.new_status, csh.case_type;
+GROUP BY transition_date, csh.changed_at, csh.old_status, csh.new_status, ac.type;
 
 -- Case type/source breakdown view
 CREATE VIEW IF NOT EXISTS abuse_case_type_source_breakdown AS
 SELECT
-    DATE(created_at) AS case_date,
     type AS case_type,
     source AS report_source,
     priority,
     COUNT(*) AS case_count
 FROM abuse_cases
 WHERE deleted_at IS NULL
-GROUP BY case_date, type, source, priority;
+GROUP BY type, source, priority;
 
 -- Communication hourly counts view
 CREATE VIEW IF NOT EXISTS abuse_communication_hourly_counts AS
@@ -347,8 +347,10 @@ SELECT
 FROM abuse_cases
 WHERE deleted_at IS NULL
 GROUP BY metric_date, case_type, priority, source;
+-- +goose StatementEnd
 
--- migrate:down
+-- +goose Down
+-- +goose StatementBegin
 
 DROP VIEW IF EXISTS abuse_case_daily_resolutions;
 DROP VIEW IF EXISTS abuse_case_status_transitions;
@@ -404,3 +406,4 @@ DROP TABLE IF EXISTS abuse_subjects;
 
 DROP INDEX IF EXISTS idx_abuse_reporters_email;
 DROP TABLE IF EXISTS abuse_reporters;
+-- +goose StatementEnd

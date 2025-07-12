@@ -105,6 +105,16 @@ func (s *AbuseReportServiceDefault) SubmitReport(_ context.Context, caseData *mo
 	caseData.SubjectID = subject.ID
 	caseData.Reporter = models.Reporter{}
 	caseData.Subject = models.Subject{}
+	// Check if reporter is trusted
+	isTrusted, err := s.reporterService.IsTrusted(reporter)
+	if err != nil {
+		s.logger.Error("Failed to check reporter trust status",
+			zap.Error(err),
+			zap.Uint("reporter_id", reporter.ID))
+		return nil, fmt.Errorf("failed to check reporter trust status: %w", err)
+	}
+
+	caseData.NeedsReview = !isTrusted
 
 	// Create case through service to ensure notifications
 	createdCase, err := s.caseService.Create(caseData)

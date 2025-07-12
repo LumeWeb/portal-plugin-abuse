@@ -16,6 +16,87 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestAbuseReportService_SubmitReport_TrustedReporter(t *testing.T) {
+	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		abuseReportService := core.GetService[typesSvc.AbuseReportService](ctx, typesSvc.ABUSE_REPORT_SERVICE)
+		assert.NotNil(tb, abuseReportService)
+
+		mockCaseService := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
+		mockReporterService := core.GetService[*mocks.MockReporterService](ctx, typesSvc.REPORTER_SERVICE)
+		mockSubjectService := core.GetService[*mocks.MockSubjectService](ctx, typesSvc.SUBJECT_SERVICE)
+
+		caseData := &models.Case{
+			Type:        models.CaseTypeSpam,
+			Status:      models.CaseStatusNew,
+			Priority:    models.CasePriorityMedium,
+			Description: "Test spam report",
+			Reporter: models.Reporter{
+				Email: "trusted@example.com",
+				Name:  "Trusted Reporter",
+			},
+			Subject: models.Subject{
+				Identifier: []byte("testhash"),
+				Type:       models.SubjectTypeHash,
+			},
+		}
+
+		// Mock ReporterService.GetByEmail to return existing trusted reporter
+		mockReporterService.EXPECT().
+			GetByEmail(caseData.Reporter.Email).
+			Return(&models.Reporter{
+				Model: gorm.Model{ID: 1},
+				Email: caseData.Reporter.Email,
+				Name:  caseData.Reporter.Name,
+			}, nil).
+			Once()
+
+		// Mock ReporterService.IsTrusted to return true
+		mockReporterService.EXPECT().
+			IsTrusted(mock.AnythingOfType("*models.Reporter")).
+			Return(true, nil).
+			Once()
+
+		// Mock SubjectService.Create
+		mockSubjectService.EXPECT().
+			Create(mock.AnythingOfType("*models.Subject")).
+			Return(&models.Subject{
+				Model:      gorm.Model{ID: 1},
+				Identifier: caseData.Subject.Identifier,
+				Type:       caseData.Subject.Type,
+			}, nil).
+			Once()
+
+		// Mock CaseService.Create with NeedsReview=false expectation
+		mockCaseService.EXPECT().
+			Create(mock.MatchedBy(func(c *models.Case) bool {
+				return c.NeedsReview == false
+			})).
+			Return(&models.Case{
+				Model:           gorm.Model{ID: 1},
+				Type:            models.CaseTypeSpam,
+				Status:          models.CaseStatusNew,
+				Priority:        models.CasePriorityMedium,
+				Description:     "Test spam report",
+				ReporterID:      1,
+				SubjectID:       1,
+				ReferenceNumber: "testref",
+				NeedsReview:     false,
+			}, nil).
+			Once()
+
+		// Act
+		createdCase, err := abuseReportService.SubmitReport(context.Background(), caseData)
+
+		// Assert
+		assert.NoError(tb, err)
+		assert.NotNil(tb, createdCase)
+		assert.False(tb, createdCase.NeedsReview, "Trusted reporter should have NeedsReview=false")
+	},
+		coreTesting.WithService(typesSvc.ABUSE_REPORT_SERVICE, NewAbuseReportService),
+	)
+}
+
 func TestAbuseReportService_SubmitReport(t *testing.T) {
 	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		// Arrange
@@ -91,6 +172,12 @@ func TestAbuseReportService_SubmitReport(t *testing.T) {
 			Return(expectedSubject, nil).
 			Once()
 
+		// Mock ReporterService.IsTrusted to return false for regular reporter
+		mockReporterService.EXPECT().
+			IsTrusted(mock.AnythingOfType("*models.Reporter")).
+			Return(false, nil).
+			Once()
+
 		// Mock CaseService.Create with expected case data
 		mockCaseService.EXPECT().
 			Create(mock.AnythingOfType("*models.Case")).
@@ -107,6 +194,93 @@ func TestAbuseReportService_SubmitReport(t *testing.T) {
 		assert.Equal(tb, expectedCase.Status, createdCase.Status)
 		assert.Equal(tb, expectedCase.Priority, createdCase.Priority)
 		assert.Equal(tb, expectedCase.Description, createdCase.Description)
+	},
+		coreTesting.WithService(typesSvc.ABUSE_REPORT_SERVICE, NewAbuseReportService),
+	)
+}
+
+func TestAbuseReportService_SubmitReport_FirstTimeReporter(t *testing.T) {
+	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		abuseReportService := core.GetService[typesSvc.AbuseReportService](ctx, typesSvc.ABUSE_REPORT_SERVICE)
+		assert.NotNil(tb, abuseReportService)
+
+		mockCaseService := core.GetService[*mocks.MockCaseService](ctx, typesSvc.CASE_SERVICE)
+		mockReporterService := core.GetService[*mocks.MockReporterService](ctx, typesSvc.REPORTER_SERVICE)
+		mockSubjectService := core.GetService[*mocks.MockSubjectService](ctx, typesSvc.SUBJECT_SERVICE)
+
+		caseData := &models.Case{
+			Type:        models.CaseTypeSpam,
+			Status:      models.CaseStatusNew,
+			Priority:    models.CasePriorityMedium,
+			Description: "Test spam report",
+			Reporter: models.Reporter{
+				Email: "new@example.com",
+				Name:  "First Time Reporter",
+			},
+			Subject: models.Subject{
+				Identifier: []byte("testhash"),
+				Type:       models.SubjectTypeHash,
+			},
+		}
+
+		// Mock ReporterService.GetByEmail to return not found (new reporter)
+		mockReporterService.EXPECT().
+			GetByEmail(caseData.Reporter.Email).
+			Return(nil, db.ErrRecordNotFound).
+			Once()
+
+		// Mock ReporterService.Create
+		mockReporterService.EXPECT().
+			Create(mock.AnythingOfType("*models.Reporter")).
+			Return(&models.Reporter{
+				Model: gorm.Model{ID: 1},
+				Email: caseData.Reporter.Email,
+				Name:  caseData.Reporter.Name,
+			}, nil).
+			Once()
+
+		// Mock SubjectService.Create
+		mockSubjectService.EXPECT().
+			Create(mock.AnythingOfType("*models.Subject")).
+			Return(&models.Subject{
+				Model:      gorm.Model{ID: 1},
+				Identifier: caseData.Subject.Identifier,
+				Type:       caseData.Subject.Type,
+			}, nil).
+			Once()
+
+		// Mock ReporterService.IsTrusted to return false for new reporter
+		mockReporterService.EXPECT().
+			IsTrusted(mock.AnythingOfType("*models.Reporter")).
+			Return(false, nil).
+			Once()
+
+		// Mock CaseService.Create with NeedsReview=true expectation
+		mockCaseService.EXPECT().
+			Create(mock.MatchedBy(func(c *models.Case) bool {
+				return c.NeedsReview == true
+			})).
+			Return(&models.Case{
+				Model:           gorm.Model{ID: 1},
+				Type:            models.CaseTypeSpam,
+				Status:          models.CaseStatusNew,
+				Priority:        models.CasePriorityMedium,
+				Description:     "Test spam report",
+				ReporterID:      1,
+				SubjectID:       1,
+				ReferenceNumber: "testref",
+				NeedsReview:     true,
+			}, nil).
+			Once()
+
+		// Act
+		createdCase, err := abuseReportService.SubmitReport(context.Background(), caseData)
+
+		// Assert
+		assert.NoError(tb, err)
+		assert.NotNil(tb, createdCase)
+		assert.True(tb, createdCase.NeedsReview, "First time reporter should have NeedsReview=true")
 	},
 		coreTesting.WithService(typesSvc.ABUSE_REPORT_SERVICE, NewAbuseReportService),
 	)

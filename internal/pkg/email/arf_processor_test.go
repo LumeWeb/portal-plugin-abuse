@@ -3,20 +3,18 @@ package email
 import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coreTesting "go.lumeweb.com/portal/core/testing"
 	"strings"
 	"testing"
-
-	emailmocks "go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/mocks"
-	coreTesting "go.lumeweb.com/portal/core/testing"
 )
 
-// setupTestContext creates a minimal test context with just the ContentExtractor mock
-func setupTestContext(t *testing.T) (testCtx coreTesting.TestContext, mockContentExtractor *emailmocks.MockContentExtractor) {
+// setupTestContext creates a minimal test context with just the ContentExtractorDefault mock
+func setupTestContext(t *testing.T) (testCtx coreTesting.TestContext, mockContentExtractor *MockContentExtractor) {
 	// Create a test context using core testing
 	testCtx = coreTesting.NewTestContext(t)
 
-	// Create a mock ContentExtractor - this is the only dependency we need to mock
-	mockContentExtractor = emailmocks.NewMockContentExtractor(t)
+	// Create a mock ContentExtractorDefault - this is the only dependency we need to mock
+	mockContentExtractor = NewMockContentExtractor(t)
 
 	return testCtx, mockContentExtractor
 }

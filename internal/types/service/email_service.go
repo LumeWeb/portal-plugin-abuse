@@ -19,5 +19,5 @@ type EmailService interface {
 	ProcessIncomingEmail(ctx context.Context, rawEmail io.Reader) error
 
 	// GenerateCaseThreadID generates a unique thread ID for a case
-	GenerateCaseThreadID(caseID uint, referenceNumber string) string
+	GenerateCaseThreadID(referenceNumber string) string
 }

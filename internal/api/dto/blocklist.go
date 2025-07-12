@@ -124,7 +124,7 @@ func (r *BlockContentCreateRequest) Schema() *z.StructSchema {
 		"FileName":   z.String().Optional(),
 		"Size":       z.Int64().Optional(),
 		"UploaderID": z.Ptr(z.Int().Optional()),
-		"Reason": StringLike[models.BlockReason]().Required().OneOf([]models.BlockReason{
+		"Reason": z.StringLike[models.BlockReason]().Required().OneOf([]models.BlockReason{
 			models.BlockReasonMalware,
 			models.BlockReasonCsam,
 			models.BlockReasonCopyright,
@@ -134,20 +134,20 @@ func (r *BlockContentCreateRequest) Schema() *z.StructSchema {
 			models.BlockReasonSystemPolicy,
 			models.BlockReasonManual,
 		}),
-		"Severity": StringLike[models.BlockSeverity]().Required().OneOf([]models.BlockSeverity{
+		"Severity": z.StringLike[models.BlockSeverity]().Required().OneOf([]models.BlockSeverity{
 			models.BlockSeverityCritical,
 			models.BlockSeverityHigh,
 			models.BlockSeverityMedium,
 			models.BlockSeverityLow,
 		}),
-		"Action": StringLike[models.BlockAction]().Required().OneOf([]models.BlockAction{
+		"Action": z.StringLike[models.BlockAction]().Required().OneOf([]models.BlockAction{
 			models.BlockActionReject,
 			models.BlockActionQuarantine,
 			models.BlockActionWarn,
 			models.BlockActionLog,
 		}),
 		"Description": z.String().Optional(),
-		"Source": StringLike[models.BlockSource]().Optional().OneOf([]models.BlockSource{
+		"Source": z.StringLike[models.BlockSource]().Optional().OneOf([]models.BlockSource{
 			models.BlockSourceScanner,
 			models.BlockSourceReport,
 			models.BlockSourceAdmin,

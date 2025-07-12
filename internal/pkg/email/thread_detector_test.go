@@ -22,10 +22,10 @@ import (
 var (
 	testDefaultPagination    = queryutil.DefaultPagination
 	testLargePagination      = queryutil.LargePagination
-	emailResponseQueryFilter = queryutil.Or(
+	emailResponseQueryFilter = queryutil.Filters(queryutil.Or(
 		queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail)),
 		queryutil.StringField("type").Eq(string(models.CommunicationTypeResponse)),
-	)
+	))
 	emailQueryFilter = []queryutil.CrudFilter{queryutil.StringField("type").Eq(string(models.CommunicationTypeEmail))}
 	emptyQueryFilter = []queryutil.CrudFilter(nil)
 	emptySortFilter  = []queryutil.Sort(nil)

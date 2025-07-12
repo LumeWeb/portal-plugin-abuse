@@ -5,19 +5,15 @@ filename: "{{.InterfaceName}}.go"
 template-data:
   unroll-variadic: true
 packages:
-  go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces:
+  go.lumeweb.com/portal-plugin-abuse/internal/pkg/email:
     config:
-      dir: internal/pkg/email/mocks
-      pkgname: mocks
+      dir: internal/pkg/email
+      filename: "mock_{{.InterfaceName}}.go"
+      pkgname: email
     interfaces:
       ContentExtractor: {}
       IMAPClientConn: {}
       IMAPDialer: {}
-  go.lumeweb.com/portal-plugin-abuse/internal/pkg/email:
-    config:
-      dir: internal/pkg/email/mocks
-      pkgname: mocks
-    interfaces:
       IMAPClient: {}
   go.lumeweb.com/portal-plugin-abuse/internal/pkg/scanner:
     config:

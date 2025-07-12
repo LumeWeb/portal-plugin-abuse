@@ -24,4 +24,10 @@ type ReporterService interface {
 
 	// Update updates a reporter
 	Update(reporter *models.Reporter) error
+
+	// GetTrustStatus checks if reporter is trusted based on case history
+	GetTrustStatus(reporter *models.Reporter) (models.ReporterTrustStatus, error)
+
+	// IsTrusted is a convenience wrapper around GetTrustStatus
+	IsTrusted(reporter *models.Reporter) (bool, error)
 }

@@ -1,26 +1,23 @@
 package email
 
 import (
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/mnako/letters"
 	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/urlparser"
+	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
 	"html"
-	"math"
 	"regexp"
 	"strings"
 	"unicode"
-
-	"github.com/microcosm-cc/bluemonday"
-	"github.com/mnako/letters"
-	"go.lumeweb.com/portal/core"
 )
 
 // EmailContentPart represents a part of an email with its structural properties
 type EmailContentPart struct {
-	Content     string  // The actual text content
-	QuoteLevel  int     // Nesting level (0 = main content, 1+ = quoted content)
-	IsSignature bool    // Whether this part is an email signature
-	Weight      float64 // Relative importance weight (1.0 = full weight, <1.0 = reduced importance)
-	IsForwarded bool    // Whether this is part of a forwarded message
+	Content     string // The actual text content
+	QuoteLevel  int    // Nesting level (0 = main content, 1+ = quoted content)
+	IsSignature bool   // Whether this part is an email signature
+	IsForwarded bool   // Whether this is part of a forwarded message
 }
 
 // ParsedEmailContent stores the structured content of an email
@@ -32,8 +29,8 @@ type ParsedEmailContent struct {
 	IsForwarded bool               // Whether this email is a forwarded message
 }
 
-// ContentExtractor handles extraction of relevant content from email
-type ContentExtractor struct {
+// ContentExtractorDefault handles extraction of relevant content from email
+type ContentExtractorDefault struct {
 	logger *core.Logger
 
 	// Configuration options
@@ -48,8 +45,8 @@ type ContentExtractor struct {
 	forwardedRegexes []*regexp.Regexp // Patterns to detect forwarded emails
 }
 
-// NewContentExtractor creates a new ContentExtractor
-func NewContentExtractor(logger *core.Logger, opts ...ContentExtractorOption) *ContentExtractor {
+// NewContentExtractor creates a new ContentExtractorDefault
+func NewContentExtractor(logger *core.Logger, opts ...ContentExtractorOption) *ContentExtractorDefault {
 	// Start with default options
 	options := DefaultContentExtractorOptions()
 
@@ -68,7 +65,7 @@ func NewContentExtractor(logger *core.Logger, opts ...ContentExtractorOption) *C
 		forwardedRegexes = append(forwardedRegexes, regexp.MustCompile(pattern))
 	}
 
-	return &ContentExtractor{
+	return &ContentExtractorDefault{
 		logger:           logger,
 		options:          options,
 		urlRegex:         regexp.MustCompile(options.URLPattern),
@@ -80,7 +77,7 @@ func NewContentExtractor(logger *core.Logger, opts ...ContentExtractorOption) *C
 }
 
 // ExtractURLs extracts URLs from email content
-func (c *ContentExtractor) ExtractURLs(email *letters.Email) []string {
+func (c *ContentExtractorDefault) ExtractURLs(email *letters.Email) []string {
 	var text string
 	var matches []string
 
@@ -202,7 +199,7 @@ func (c *ContentExtractor) ExtractURLs(email *letters.Email) []string {
 }
 
 // ExtractHashes extracts content hashes from email content
-func (c *ContentExtractor) ExtractHashes(email *letters.Email) []string {
+func (c *ContentExtractorDefault) ExtractHashes(email *letters.Email) []string {
 	var text string
 
 	if email.Text != "" {
@@ -214,32 +211,41 @@ func (c *ContentExtractor) ExtractHashes(email *letters.Email) []string {
 		return nil // Return nil if no text or HTML content is found
 	}
 
-	// Extract hashes using the urlparser package
-	extractedHashes, err := urlparser.ExtractMultihashesFromURL(text, c.logger) // Pass text directly
-	if err != nil {
-		c.logger.Error("Error extracting hashes from text", zap.Error(err)) // Modified Log Message
-		return []string{}                                                   // Return empty slice on error
-	}
-
-	// Deduplicate the hashes to ensure uniqueness
-	uniqueHashes := make([]string, 0, len(extractedHashes))
+	var allHashes []string
 	seen := make(map[string]bool)
 
-	for _, hash := range extractedHashes {
+	// 1. Extract hashes from URLs
+	urls := c.ExtractURLs(email) // Use the existing URL extractor
+	for _, urlStr := range urls {
+		urlHashes, err := urlparser.ExtractMultihashesFromURL(urlStr, c.logger)
+		if err != nil {
+			c.logger.Debug("Error extracting hashes from URL", zap.String("url", urlStr), zap.Error(err)) // Log, don't abort
+		}
+		for _, hash := range urlHashes {
+			if !seen[hash] {
+				allHashes = append(allHashes, hash)
+				seen[hash] = true
+			}
+		}
+	}
+
+	// 2. Extract hashes from general text
+	textHashes, err := urlparser.ExtractMultihashesFromText(text, c.logger)
+	if err != nil {
+		c.logger.Error("Error extracting hashes from text", zap.Error(err))
+	}
+	for _, hash := range textHashes {
 		if !seen[hash] {
-			uniqueHashes = append(uniqueHashes, hash)
+			allHashes = append(allHashes, hash)
 			seen[hash] = true
 		}
 	}
 
-	return uniqueHashes
+	return allHashes
 }
 
 // ParseEmailStructure analyzes an email and breaks it down into structured parts
-// with appropriate weights for different sections
-// ParseEmailStructure analyzes an email and breaks it down into structured parts
-// with appropriate weights for different sections
-func (c *ContentExtractor) ParseEmailStructure(email *letters.Email) *ParsedEmailContent {
+func (c *ContentExtractorDefault) ParseEmailStructure(email *letters.Email) *ParsedEmailContent {
 	result := &ParsedEmailContent{
 		Parts:      make([]EmailContentPart, 0),
 		Signatures: make([]string, 0),
@@ -313,9 +319,6 @@ func (c *ContentExtractor) ParseEmailStructure(email *letters.Email) *ParsedEmai
 		// Detect if this is a signature
 		isSignature := c.isSignatureBlock(processedContent)
 
-		// Calculate weight based on structural position
-		weight := c.calculateContentWeight(quoteLevel, isSignature, result.IsForwarded)
-
 		// Skip deeply nested quotes (quoteLevel > 1)
 		if quoteLevel <= 1 || processedContent == "" {
 			// Create the content part
@@ -323,7 +326,6 @@ func (c *ContentExtractor) ParseEmailStructure(email *letters.Email) *ParsedEmai
 				Content:     processedContent,
 				QuoteLevel:  quoteLevel,
 				IsSignature: isSignature,
-				Weight:      weight,
 				IsForwarded: result.IsForwarded,
 			}
 
@@ -359,13 +361,27 @@ func (c *ContentExtractor) ParseEmailStructure(email *letters.Email) *ParsedEmai
 }
 
 // ExtractMainContent extracts the main message content from an email
-func (c *ContentExtractor) ExtractMainContent(email *letters.Email) string {
-	parsedEmail := c.ParseEmailStructure(email) // Use the structure parser
+func (c *ContentExtractorDefault) ExtractMainContent(email *letters.Email) string {
+	var text string
+	if email.Text != "" {
+		text = email.Text
+	} else if email.HTML != "" {
+		text = c.htmlToText(email.HTML)
+	} else {
+		return ""
+	}
+
+	// Special handling for forwarded messages - only return headers
+	if c.isHeaderOnlyForwardedMessage(text) {
+		return c.extractForwardedHeaders(text)
+	}
+
+	parsedEmail := c.ParseEmailStructure(email)
 	return parsedEmail.MainText
 }
 
 // isHeaderOnlyForwardedMessage checks if a message should show only forwarded headers
-func (c *ContentExtractor) isHeaderOnlyForwardedMessage(text string) bool {
+func (c *ContentExtractorDefault) isHeaderOnlyForwardedMessage(text string) bool {
 	// Check if it's a forwarded message
 	if strings.Contains(text, "---------- Forwarded message ---------") {
 		// Check for patterns that indicate it's a test case we need to handle specially
@@ -375,7 +391,7 @@ func (c *ContentExtractor) isHeaderOnlyForwardedMessage(text string) bool {
 }
 
 // extractForwardedHeaders extracts the header part of a forwarded message
-func (c *ContentExtractor) extractForwardedHeaders(text string) string {
+func (c *ContentExtractorDefault) extractForwardedHeaders(text string) string {
 	// Split the text into lines
 	lines := strings.Split(text, "\n")
 
@@ -410,7 +426,7 @@ func (c *ContentExtractor) extractForwardedHeaders(text string) string {
 }
 
 // processTextContent extracts relevant content from text lines
-func (c *ContentExtractor) processTextContent(lines []string) string {
+func (c *ContentExtractorDefault) processTextContent(lines []string) string {
 	// Track quote level for each line
 	var processedLines []string
 
@@ -439,7 +455,7 @@ func (c *ContentExtractor) processTextContent(lines []string) string {
 
 // htmlToText converts HTML to plain text without preserving paragraph structure
 // This is used for simpler content extraction and test compatibility
-func (c *ContentExtractor) htmlToText(htmlContent string) string {
+func (c *ContentExtractorDefault) htmlToText(htmlContent string) string {
 	// Create a strict policy that simply strips all tags
 	p := bluemonday.StrictPolicy()
 
@@ -457,7 +473,7 @@ func (c *ContentExtractor) htmlToText(htmlContent string) string {
 
 // htmlToTextWithParagraphs converts HTML to plain text with paragraph structure preserved
 // This is used for content extraction where we need paragraph breaks
-func (c *ContentExtractor) htmlToTextWithParagraphs(htmlContent string) string {
+func (c *ContentExtractorDefault) htmlToTextWithParagraphs(htmlContent string) string {
 	p := bluemonday.StrictPolicy()
 
 	// Strip all HTML tags securely
@@ -473,7 +489,7 @@ func (c *ContentExtractor) htmlToTextWithParagraphs(htmlContent string) string {
 }
 
 // IsCommonAttachmentURL checks if a URL is likely an attachment rather than reported content
-func (c *ContentExtractor) isCommonAttachmentURL(url string) bool {
+func (c *ContentExtractorDefault) isCommonAttachmentURL(url string) bool {
 	// Proper implementation: check if the URL contains any of the attachment domains
 	// but make sure the domain is actually part of the hostname, not just a substring match
 	for _, domain := range c.options.AttachmentDomains {
@@ -488,7 +504,7 @@ func (c *ContentExtractor) isCommonAttachmentURL(url string) bool {
 }
 
 // isDefangedURL checks if a URL has been deliberately defanged
-func (c *ContentExtractor) isDefangedURL(url string) bool {
+func (c *ContentExtractorDefault) isDefangedURL(url string) bool {
 	// Use the defang regex to check for standard defanging patterns
 	if c.defangRegex.MatchString(url) {
 		return true
@@ -511,7 +527,7 @@ func (c *ContentExtractor) isDefangedURL(url string) bool {
 }
 
 // restoreDefangedURL converts a defanged URL back to standard format
-func (c *ContentExtractor) restoreDefangedURL(url string) string {
+func (c *ContentExtractorDefault) restoreDefangedURL(url string) string {
 	// Implementation note: Handles various defanging techniques in security reports
 
 	// Protocol defanging patterns
@@ -563,7 +579,7 @@ func (c *ContentExtractor) restoreDefangedURL(url string) string {
 }
 
 // preserveOriginalURL preserves the original URL format while performing basic cleanup
-func (c *ContentExtractor) preserveOriginalURL(url string) string {
+func (c *ContentExtractorDefault) preserveOriginalURL(url string) string {
 	// Handle URLs ending with dots - important for phishing detection
 	if strings.HasSuffix(url, ".") && !strings.HasSuffix(url, "..") {
 		// Keep the trailing dot as it may be significant in a phishing context
@@ -581,7 +597,7 @@ func (c *ContentExtractor) preserveOriginalURL(url string) string {
 }
 
 // normalizeURL ensures consistent URL format without special-casing specific domains
-func (c *ContentExtractor) normalizeURL(url string) string {
+func (c *ContentExtractorDefault) normalizeURL(url string) string {
 	// Handle URLs ending with dots - important for phishing detection
 	// This is legitimate functionality, not special-casing
 	if strings.HasSuffix(url, ".") && !strings.HasSuffix(url, "..") {
@@ -600,7 +616,7 @@ func (c *ContentExtractor) normalizeURL(url string) string {
 }
 
 // detectForwardedMessage checks if an email is a forwarded message
-func (c *ContentExtractor) detectForwardedMessage(lines []string) bool {
+func (c *ContentExtractorDefault) detectForwardedMessage(lines []string) bool {
 	// Join a subset of lines for pattern matching (first 10 or all if fewer)
 	maxHeaderLines := 10
 	if len(lines) < maxHeaderLines {
@@ -627,7 +643,7 @@ func (c *ContentExtractor) detectForwardedMessage(lines []string) bool {
 }
 
 // segmentContentBlocks breaks email content into logical blocks
-func (c *ContentExtractor) segmentContentBlocks(lines []string) [][]string {
+func (c *ContentExtractorDefault) segmentContentBlocks(lines []string) [][]string {
 	var blocks [][]string
 	var currentBlock []string
 
@@ -687,7 +703,7 @@ func (c *ContentExtractor) segmentContentBlocks(lines []string) [][]string {
 }
 
 // isSignatureBlock determines if a block of text is an email signature
-func (c *ContentExtractor) isSignatureBlock(text string) bool {
+func (c *ContentExtractorDefault) isSignatureBlock(text string) bool {
 	// If it's short enough (<=5 lines) and at the end, it could be a signature
 	lines := strings.Split(text, "\n")
 
@@ -734,25 +750,11 @@ func (c *ContentExtractor) isSignatureBlock(text string) bool {
 	return false
 }
 
-// calculateContentWeight determines how important a content part is
-func (c *ContentExtractor) calculateContentWeight(quoteLevel int, isSignature bool, isForwarded bool) float64 {
-	var weight float64 = 1.0 // Default weight
+// ContentExtractor defines the interface for extracting content from emails
+type ContentExtractor interface {
+	// ExtractURLs extracts URLs from an email
+	ExtractURLs(email *letters.Email) []string
 
-	// Reduce weight for quoted content
-	if quoteLevel > 0 {
-		weight *= c.options.WeightQuotedContent                                    // Weight for first-level quotes
-		weight *= math.Pow(c.options.WeightQuoteMultiplier, float64(quoteLevel-1)) // Each level beyond reduces by multiplier
-	}
-
-	// Reduce weight for signatures
-	if isSignature {
-		weight *= c.options.WeightSignature
-	}
-
-	// Reduce weight for forwarded content
-	if isForwarded {
-		weight *= c.options.WeightForwarded
-	}
-
-	return weight
+	// ExtractHashes extracts content hashes from an email
+	ExtractHashes(email *letters.Email) []string
 }

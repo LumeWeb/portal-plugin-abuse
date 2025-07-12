@@ -19,21 +19,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// TemplateProcessor handles detection and processing of known provider email templates
-type TemplateProcessor struct {
+// TemplateProcessor defines the interface for processing email templates
+type TemplateProcessor interface {
+	GetRegistry() *ProviderTemplateRegistry
+	SetRegistry(registry *ProviderTemplateRegistry)
+	RegisterProviderTemplate(providerID string, template ProviderTemplate, detector ProviderDetector, priority int)
+	DetectProvider(emailData io.Reader) (string, *letters.Email, bool)
+	Process(ctx context.Context, emailData io.Reader, provider string) error
+}
+
+// DefaultTemplateProcessor is the default implementation of TemplateProcessor
+type DefaultTemplateProcessor struct {
 	ctx              core.Context
 	logger           *core.Logger
-	contentExtractor *ContentExtractor
+	contentExtractor *ContentExtractorDefault
 	registry         *ProviderTemplateRegistry
 }
 
 // GetRegistry returns the provider template registry
-func (p *TemplateProcessor) GetRegistry() *ProviderTemplateRegistry {
+func (p *DefaultTemplateProcessor) GetRegistry() *ProviderTemplateRegistry {
 	return p.registry
 }
 
 // SetRegistry sets the provider template registry
-func (p *TemplateProcessor) SetRegistry(registry *ProviderTemplateRegistry) {
+func (p *DefaultTemplateProcessor) SetRegistry(registry *ProviderTemplateRegistry) {
 	p.registry = registry
 }
 
@@ -56,8 +65,8 @@ type ProviderTemplate interface {
 }
 
 // NewTemplateProcessor creates a new template processor
-func NewTemplateProcessor(ctx core.Context, contentExtractor *ContentExtractor) *TemplateProcessor {
-	tp := &TemplateProcessor{
+func NewTemplateProcessor(ctx core.Context, contentExtractor *ContentExtractorDefault) TemplateProcessor {
+	tp := &DefaultTemplateProcessor{
 		ctx:              ctx,
 		logger:           ctx.NamedLogger("template-processor"),
 		contentExtractor: contentExtractor,
@@ -71,7 +80,7 @@ func NewTemplateProcessor(ctx core.Context, contentExtractor *ContentExtractor) 
 }
 
 // registerTemplates registers known provider-specific templates
-func (p *TemplateProcessor) registerTemplates() {
+func (p *DefaultTemplateProcessor) registerTemplates() {
 	// Register Gmail template
 	gmailTemplate := NewGmailTemplate(p.ctx, p.contentExtractor)
 	p.registry.RegisterProvider("gmail", gmailTemplate, gmailTemplate.Match, 10)
@@ -84,7 +93,7 @@ func (p *TemplateProcessor) registerTemplates() {
 }
 
 // RegisterProviderTemplate allows external registration of new provider templates
-func (p *TemplateProcessor) RegisterProviderTemplate(
+func (p *DefaultTemplateProcessor) RegisterProviderTemplate(
 	providerID string,
 	template ProviderTemplate,
 	detector ProviderDetector,
@@ -94,7 +103,7 @@ func (p *TemplateProcessor) RegisterProviderTemplate(
 }
 
 // DetectProvider detects the email provider from the email content
-func (p *TemplateProcessor) DetectProvider(emailData io.Reader) (string, *letters.Email, bool) {
+func (p *DefaultTemplateProcessor) DetectProvider(emailData io.Reader) (string, *letters.Email, bool) {
 	// Copy the reader to a buffer so we can reuse it
 	var buf bytes.Buffer
 	teeReader := io.TeeReader(emailData, &buf)
@@ -116,7 +125,7 @@ func (p *TemplateProcessor) DetectProvider(emailData io.Reader) (string, *letter
 }
 
 // extractDomain extracts the domain from an email address list
-func (p *TemplateProcessor) extractDomain(addresses []*mail.Address) string {
+func (p *DefaultTemplateProcessor) extractDomain(addresses []*mail.Address) string {
 	if len(addresses) == 0 {
 		return ""
 	}
@@ -134,7 +143,7 @@ func (p *TemplateProcessor) extractDomain(addresses []*mail.Address) string {
 }
 
 // Process processes an email using the detected provider's template
-func (p *TemplateProcessor) Process(ctx context.Context, emailData io.Reader, provider string) error {
+func (p *DefaultTemplateProcessor) Process(ctx context.Context, emailData io.Reader, provider string) error {
 	// Get the template for this provider from the registry
 	template, ok := p.registry.GetTemplate(provider)
 	if !ok {
@@ -160,11 +169,11 @@ func (p *TemplateProcessor) Process(ctx context.Context, emailData io.Reader, pr
 type GmailTemplate struct {
 	ctx              core.Context
 	logger           *core.Logger
-	contentExtractor *ContentExtractor
+	contentExtractor *ContentExtractorDefault
 }
 
 // NewGmailTemplate creates a new Gmail template processor
-func NewGmailTemplate(ctx core.Context, contentExtractor *ContentExtractor) *GmailTemplate {
+func NewGmailTemplate(ctx core.Context, contentExtractor *ContentExtractorDefault) *GmailTemplate {
 	return &GmailTemplate{
 		ctx:              ctx,
 		logger:           ctx.NamedLogger("gmail-template"),
@@ -436,11 +445,11 @@ func (g *GmailTemplate) ExtractCategory(email *letters.Email) models.CaseType {
 type MicrosoftTemplate struct {
 	ctx              core.Context
 	logger           *core.Logger
-	contentExtractor *ContentExtractor
+	contentExtractor *ContentExtractorDefault
 }
 
 // NewMicrosoftTemplate creates a new Microsoft template processor
-func NewMicrosoftTemplate(ctx core.Context, contentExtractor *ContentExtractor) *MicrosoftTemplate {
+func NewMicrosoftTemplate(ctx core.Context, contentExtractor *ContentExtractorDefault) *MicrosoftTemplate {
 	return &MicrosoftTemplate{
 		ctx:              ctx,
 		logger:           ctx.NamedLogger("microsoft-template"),

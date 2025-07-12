@@ -95,16 +95,16 @@ func (_c *MockEmailService_Config_Call) RunAndReturn(run func() (any, error)) *M
 }
 
 // GenerateCaseThreadID provides a mock function for the type MockEmailService
-func (_mock *MockEmailService) GenerateCaseThreadID(caseID uint, referenceNumber string) string {
-	ret := _mock.Called(caseID, referenceNumber)
+func (_mock *MockEmailService) GenerateCaseThreadID(referenceNumber string) string {
+	ret := _mock.Called(referenceNumber)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GenerateCaseThreadID")
 	}
 
 	var r0 string
-	if returnFunc, ok := ret.Get(0).(func(uint, string) string); ok {
-		r0 = returnFunc(caseID, referenceNumber)
+	if returnFunc, ok := ret.Get(0).(func(string) string); ok {
+		r0 = returnFunc(referenceNumber)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
@@ -117,25 +117,19 @@ type MockEmailService_GenerateCaseThreadID_Call struct {
 }
 
 // GenerateCaseThreadID is a helper method to define mock.On call
-//   - caseID uint
 //   - referenceNumber string
-func (_e *MockEmailService_Expecter) GenerateCaseThreadID(caseID interface{}, referenceNumber interface{}) *MockEmailService_GenerateCaseThreadID_Call {
-	return &MockEmailService_GenerateCaseThreadID_Call{Call: _e.mock.On("GenerateCaseThreadID", caseID, referenceNumber)}
+func (_e *MockEmailService_Expecter) GenerateCaseThreadID(referenceNumber interface{}) *MockEmailService_GenerateCaseThreadID_Call {
+	return &MockEmailService_GenerateCaseThreadID_Call{Call: _e.mock.On("GenerateCaseThreadID", referenceNumber)}
 }
 
-func (_c *MockEmailService_GenerateCaseThreadID_Call) Run(run func(caseID uint, referenceNumber string)) *MockEmailService_GenerateCaseThreadID_Call {
+func (_c *MockEmailService_GenerateCaseThreadID_Call) Run(run func(referenceNumber string)) *MockEmailService_GenerateCaseThreadID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 uint
+		var arg0 string
 		if args[0] != nil {
-			arg0 = args[0].(uint)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg0 = args[0].(string)
 		}
 		run(
 			arg0,
-			arg1,
 		)
 	})
 	return _c
@@ -146,7 +140,7 @@ func (_c *MockEmailService_GenerateCaseThreadID_Call) Return(s string) *MockEmai
 	return _c
 }
 
-func (_c *MockEmailService_GenerateCaseThreadID_Call) RunAndReturn(run func(caseID uint, referenceNumber string) string) *MockEmailService_GenerateCaseThreadID_Call {
+func (_c *MockEmailService_GenerateCaseThreadID_Call) RunAndReturn(run func(referenceNumber string) string) *MockEmailService_GenerateCaseThreadID_Call {
 	_c.Call.Return(run)
 	return _c
 }

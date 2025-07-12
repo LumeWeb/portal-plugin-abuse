@@ -10,7 +10,6 @@ import (
 	"net/mail"
 	"strings"
 
-	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces"
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
 )
@@ -20,7 +19,7 @@ import (
 type ARFProcessor struct {
 	ctx              core.Context
 	logger           *core.Logger
-	contentExtractor interfaces.ContentExtractor
+	contentExtractor ContentExtractor
 }
 
 // ARFReport represents a parsed ARF report
@@ -60,7 +59,7 @@ type ARFReport struct {
 }
 
 // NewARFProcessor creates a new ARF processor
-func NewARFProcessor(ctx core.Context, contentExtractor interfaces.ContentExtractor) *ARFProcessor {
+func NewARFProcessor(ctx core.Context, contentExtractor ContentExtractor) *ARFProcessor {
 	return &ARFProcessor{
 		ctx:              ctx,
 		logger:           ctx.NamedLogger("arf-processor"),
@@ -91,7 +90,7 @@ func (p *ARFProcessor) IsARF(rawEmail io.Reader) (bool, *bytes.Buffer) {
 	// Read remaining data into buffer to ensure complete capture
 	io.Copy(io.Discard, teeReader) // Ensure entire message is read into buffer
 
-	return strings.HasPrefix(mediaType, "multipart/report") && 
+	return strings.HasPrefix(mediaType, "multipart/report") &&
 		params["report-type"] == "feedback-report", &buf
 }
 

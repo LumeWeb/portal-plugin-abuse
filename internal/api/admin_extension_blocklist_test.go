@@ -193,7 +193,9 @@ func TestUnblockContent_Success(t *testing.T) {
 		}
 
 		mockBlocklistSvc.EXPECT().GetBlockedContent(exampleHash).Return(mockBlock, nil).Once()
-		mockBlocklistSvc.EXPECT().UnblockContent(exampleHash).Return(nil).Once()
+		mockBlocklistSvc.EXPECT().UnblockContent(mock.MatchedBy(func(hash *core.StorageHashDefault) bool {
+			return hash.String() == exampleHashStr
+		})).Return(nil).Once()
 
 		// Act
 		req := ctx.NewAPIRequest(http.MethodDelete, fmt.Sprintf("/api/abuse/blocklist/%s", exampleHashStr), nil)

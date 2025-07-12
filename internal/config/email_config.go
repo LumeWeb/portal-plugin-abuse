@@ -1,12 +1,12 @@
 package config
 
 import (
-	"fmt"
+	z "github.com/Oudwins/zog"
 	"go.lumeweb.com/portal/config"
 )
 
 var _ config.Defaults = (*EmailConfig)(nil)
-var _ config.Validator = (*EmailConfig)(nil)
+var _ config.ConfigSchemaProvider = (*EmailConfig)(nil)
 
 // ProviderTemplateConfig defines configuration for a provider email template
 type ProviderTemplateConfig struct {
@@ -36,33 +36,37 @@ type EmailConfig struct {
 	CustomProviders   []ProviderTemplateConfig `config:"custom_providers"`
 }
 
-func (c *EmailConfig) Validate() error {
-	// Validate IMAP settings when receiving is enabled
-	if c.ReceiveEnabled {
-		if c.IMAPHost == "" {
-			return fmt.Errorf("imap_host is required when receive_enabled is true")
-		}
-		if c.IMAPUser == "" {
-			return fmt.Errorf("imap_user is required when receive_enabled is true")
-		}
-		if c.IMAPPassword == "" {
-			return fmt.Errorf("imap_password is required when receive_enabled is true")
-		}
-		if c.IMAPPort <= 0 || c.IMAPPort > 65535 {
-			return fmt.Errorf("invalid imap_port: %d - must be between 1-65535", c.IMAPPort)
-		}
-	}
-
-	return nil
+func (c *EmailConfig) Schema() z.ZogSchema {
+	return z.Struct(z.Shape{
+		"ReceiveEnabled":    z.Bool(),
+		"IMAPHost":          z.String().Optional(),
+		"IMAPPort":          z.Int().GTE(1).LTE(65535),
+		"IMAPUser":          z.String().Optional(),
+		"IMAPPassword":      z.String().Optional(),
+		"IMAPMailbox":       z.String(),
+		"PollInterval":      z.Int().GT(0),
+		"ReceiveAddresses":  z.Slice(z.String().Email()).Optional(),
+		"StandardProviders": z.Slice(z.String()).Optional(),
+		"CustomProviders": z.Slice(
+			z.Struct(z.Shape{
+				"Name":            z.String().Required(),
+				"Enabled":         z.Bool(),
+				"Priority":        z.Int(),
+				"DomainPatterns":  z.Slice(z.String()).Optional(),
+				"HeaderPatterns":  z.Slice(z.String()).Optional(),
+				"ContentPatterns": z.Slice(z.String()).Optional(),
+			}),
+		).Optional(),
+	})
 }
 
 // Implement config.ServiceConfig interface
 func (c *EmailConfig) Defaults() map[string]any {
 	return map[string]any{
 		// IMAP receiving settings
-		"receive_enabled": true,
-		"imap_port":       993,
-		"imap_mailbox":    "INBOX",
-		"poll_interval":   300, // 5 minutes in seconds
+		"ReceiveEnabled": true,
+		"IMAPPort":       993,
+		"IMAPMailbox":    "INBOX",
+		"PollInterval":   300, // 5 minutes in seconds
 	}
 }

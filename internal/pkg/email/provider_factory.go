@@ -12,11 +12,11 @@ import (
 type ProviderFactory struct {
 	ctx              core.Context
 	logger           *core.Logger
-	contentExtractor *ContentExtractor
+	contentExtractor *ContentExtractorDefault
 }
 
 // NewProviderFactory creates a new provider factory
-func NewProviderFactory(ctx core.Context, contentExtractor *ContentExtractor) *ProviderFactory {
+func NewProviderFactory(ctx core.Context, contentExtractor *ContentExtractorDefault) *ProviderFactory {
 	return &ProviderFactory{
 		ctx:              ctx,
 		logger:           ctx.NamedLogger("provider-factory"),

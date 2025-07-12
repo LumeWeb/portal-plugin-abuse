@@ -5,6 +5,17 @@ import (
 )
 
 // CaseType defines the type of abuse case
+// CaseType defines the type of abuse case with associated priority levels.
+// Priorities are defined in CaseTypePriority map where higher numbers indicate higher urgency.
+// Example priority scale:
+// 100 - Emergency (Illegal/Harmful)
+// 90  - Critical (Malware)
+// 80  - High (Phishing)
+// 70  - Elevated (Harassment)
+// 60  - Moderate (Resource Abuse) 
+// 50  - Standard (Copyright)
+// 30  - Low (Spam)
+// 10  - Routine (Other)
 type CaseType string
 
 const (
@@ -49,6 +60,27 @@ var ValidCaseStatuses = []string{
 	string(CaseStatusInProgress),
 	string(CaseStatusResolved),
 	string(CaseStatusClosed),
+}
+
+// CaseTypePriority defines response urgency where HIGHER numbers = HIGHER priority
+// 100: Emergency (e.g., CSAM, active violence)  
+// 10: Routine (e.g., spam, non-urgent reports)
+var CaseTypePriority = map[CaseType]int{
+	// Emergency response (90-100)
+	CaseTypeIllegalOrHarmfulContent: 100, // e.g., CSAM, violent threats
+	CaseTypeMalware:                 90,  // Active exploits/ransomware
+	
+	// High priority (70-80)
+	CaseTypePhishing:                80,  // Credential theft
+	CaseTypeHarassment:              70,  // Doxing/stalking
+	
+	// Medium priority (40-60) 
+	CaseTypeResourceAbuse:           60,  // DDoS/mining
+	CaseTypeCopyrightViolation:      50,  // Takedowns
+	
+	// Low priority (10-30)
+	CaseTypeSpam:                    30,  // Bulk emails
+	CaseTypeOther:                   10,  // Catch-all
 }
 
 // ValidCaseStatusMap provides O(1) lookups for valid statuses
