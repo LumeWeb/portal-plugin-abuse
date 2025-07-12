@@ -1,11 +1,14 @@
 package config
 
 import (
+	z "github.com/Oudwins/zog"
 	"go.lumeweb.com/portal/config"
 )
 
 var _ config.Defaults = (*ScanConfig)(nil)
 var _ config.Defaults = (*ClamAVConfig)(nil)
+var _ config.ConfigSchemaProvider = (*ScanConfig)(nil)
+var _ config.ConfigSchemaProvider = (*ClamAVConfig)(nil)
 
 // ClamAVConfig holds ClamAV scanner configuration
 type ClamAVConfig struct {
@@ -21,6 +24,27 @@ type ScanConfig struct {
 	ClamAV      ClamAVConfig `config:"clamav"`
 }
 
+func (c *ScanConfig) Schema() z.ZogSchema {
+	return z.Struct(z.Shape{
+		"MaxFileSize": z.Int64().GT(0),
+		"ClamAV": z.Struct(z.Shape{
+			"Enabled":    z.Bool(),
+			"Network":    z.String(),
+			"Address":    z.String(),
+			"MaxWorkers": z.Int().GT(0),
+		}),
+	})
+}
+
+func (c *ClamAVConfig) Schema() z.ZogSchema {
+	return z.Struct(z.Shape{
+		"Enabled":    z.Bool(),
+		"Network":    z.String(),
+		"Address":    z.String(),
+		"MaxWorkers": z.Int().GT(0),
+	})
+}
+
 // Implement config.ServiceConfig interface
 func (c *ScanConfig) Defaults() map[string]any {
 	return map[string]any{
@@ -30,9 +54,9 @@ func (c *ScanConfig) Defaults() map[string]any {
 
 func (c *ClamAVConfig) Defaults() map[string]any {
 	return map[string]any{
-		"enabled":     true,
-		"network":     "unix",
-		"address":     "/var/run/clamav/clamd.ctl",
-		"max_workers": 10,
+		"Enabled":    true,
+		"Network":    "unix",
+		"Address":    "/var/run/clamav/clamd.ctl",
+		"MaxWorkers": 10,
 	}
 }

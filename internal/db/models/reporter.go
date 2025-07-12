@@ -22,9 +22,17 @@ func newEmailVerifier() *emailverifier.Verifier {
 
 var (
 	ErrInvalidReporterEmail = errors.New("invalid reporter email")
+	ErrReporterNotTrusted   = errors.New("reporter not trusted")
 )
 
 // Reporter represents someone who submits abuse reports
+type ReporterTrustStatus int
+
+const (
+	ReporterNew ReporterTrustStatus = iota
+	ReporterUntrusted
+	ReporterTrusted
+)
 type Reporter struct {
 	gorm.Model
 	Email  string `gorm:"not null"`
@@ -66,3 +74,4 @@ func (r *Reporter) BeforeCreate(tx *gorm.DB) error {
 func (r *Reporter) BeforeUpdate(tx *gorm.DB) error {
 	return r.Validate()
 }
+

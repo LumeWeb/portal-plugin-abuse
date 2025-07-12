@@ -94,3 +94,31 @@ func ExtractMultihashesFromURL(urlStr string, logger *core.Logger) ([]string, er
 
 	return multihashes, nil
 }
+
+func ExtractMultihashesFromText(text string, logger *core.Logger) ([]string, error) {
+	var multihashes []string
+	seen := make(map[string]bool)
+
+	for _, re := range HashRegexes {
+		matches := re.FindAllString(text, -1)
+		for _, match := range matches {
+			_, err := core.ParseStorageHash(match) // Use core.ParseStorageHash
+			if err == nil {                        // If ParseStorageHash succeeds, it's a valid hash
+				if !seen[match] {
+					multihashes = append(multihashes, match)
+					seen[match] = true
+				}
+			} else {
+				// Optional: Log the error for debugging purposes.  Don't return the error,
+				// as we only want to skip invalid hashes, not abort the entire process.
+				logger.Debug("Invalid hash format", zap.String("hash", match), zap.Error(err))
+			}
+		}
+	}
+
+	if len(multihashes) == 0 {
+		return []string{}, nil
+	}
+
+	return multihashes, nil
+}

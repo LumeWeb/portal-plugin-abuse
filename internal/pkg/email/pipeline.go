@@ -65,9 +65,9 @@ type PipelineDefault struct {
 	getConfig      func() *config.EmailConfig
 	emailClient    IMAPClient
 	arfProcessor   *ARFProcessor
-	classifier     *Classifier
+	classifier     Classifier
 	threadDetector *ThreadDetector
-	templateProc   *TemplateProcessor
+	templateProc   TemplateProcessor
 	processor      Processor
 	lock           sync.Mutex
 	started        bool
@@ -84,9 +84,9 @@ func (p *PipelineDefault) SetConfigCallback(cb func() *config.EmailConfig) {
 func NewPipeline(
 	ctx core.Context,
 	arfProcessor *ARFProcessor,
-	classifier *Classifier,
+	classifier Classifier,
 	threadDetector *ThreadDetector,
-	templateProc *TemplateProcessor,
+	templateProc TemplateProcessor,
 ) *PipelineDefault {
 	return &PipelineDefault{
 		ctx:    ctx,
@@ -238,7 +238,7 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 
 	// Create new case if no thread match
 	if threadMatch == nil {
-		// Classify content only when needed
+		// ClassifyEmail content only when needed
 		classify := p.classifier.ClassifyEmail(email)
 		// Get first 200 characters of email text as description
 		description := email.Text

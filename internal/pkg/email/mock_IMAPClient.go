@@ -2,11 +2,10 @@
 // github.com/vektra/mockery
 // template: testify
 
-package mocks
+package email
 
 import (
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces"
 )
 
 // NewMockIMAPClient creates a new instance of MockIMAPClient. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -37,7 +36,7 @@ func (_m *MockIMAPClient) EXPECT() *MockIMAPClient_Expecter {
 }
 
 // SetEmailHandler provides a mock function for the type MockIMAPClient
-func (_mock *MockIMAPClient) SetEmailHandler(handler interfaces.EmailHandlerFunc) {
+func (_mock *MockIMAPClient) SetEmailHandler(handler EmailHandlerFunc) {
 	_mock.Called(handler)
 	return
 }
@@ -48,16 +47,16 @@ type MockIMAPClient_SetEmailHandler_Call struct {
 }
 
 // SetEmailHandler is a helper method to define mock.On call
-//   - handler interfaces.EmailHandlerFunc
+//   - handler EmailHandlerFunc
 func (_e *MockIMAPClient_Expecter) SetEmailHandler(handler interface{}) *MockIMAPClient_SetEmailHandler_Call {
 	return &MockIMAPClient_SetEmailHandler_Call{Call: _e.mock.On("SetEmailHandler", handler)}
 }
 
-func (_c *MockIMAPClient_SetEmailHandler_Call) Run(run func(handler interfaces.EmailHandlerFunc)) *MockIMAPClient_SetEmailHandler_Call {
+func (_c *MockIMAPClient_SetEmailHandler_Call) Run(run func(handler EmailHandlerFunc)) *MockIMAPClient_SetEmailHandler_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 interfaces.EmailHandlerFunc
+		var arg0 EmailHandlerFunc
 		if args[0] != nil {
-			arg0 = args[0].(interfaces.EmailHandlerFunc)
+			arg0 = args[0].(EmailHandlerFunc)
 		}
 		run(
 			arg0,
@@ -71,7 +70,7 @@ func (_c *MockIMAPClient_SetEmailHandler_Call) Return() *MockIMAPClient_SetEmail
 	return _c
 }
 
-func (_c *MockIMAPClient_SetEmailHandler_Call) RunAndReturn(run func(handler interfaces.EmailHandlerFunc)) *MockIMAPClient_SetEmailHandler_Call {
+func (_c *MockIMAPClient_SetEmailHandler_Call) RunAndReturn(run func(handler EmailHandlerFunc)) *MockIMAPClient_SetEmailHandler_Call {
 	_c.Run(run)
 	return _c
 }

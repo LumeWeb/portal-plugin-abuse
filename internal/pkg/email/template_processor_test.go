@@ -30,7 +30,7 @@ func TestNewTemplateProcessor(t *testing.T) {
 	contentExtractor := NewContentExtractor(logger)
 
 	// Create template processor
-	processor := NewTemplateProcessor(testCtx, contentExtractor)
+	processor := NewTemplateProcessor(testCtx, contentExtractor).(*DefaultTemplateProcessor)
 
 	// Verify processor is created correctly
 	assert.NotNil(t, processor, "Processor should not be nil")
@@ -186,7 +186,7 @@ This is a regular email with no abuse report indicators.
 	}
 }
 
-func TestExtractDomain(t *testing.T) {
+func TestDetectProvider_DomainExtraction(t *testing.T) {
 	// Setup test context
 	testCtx := coreTesting.NewTestContext(t)
 	defer testCtx.Teardown()
@@ -201,42 +201,60 @@ func TestExtractDomain(t *testing.T) {
 	// Test cases
 	testCases := []struct {
 		name           string
-		addresses      []*mail.Address
+		emailContent   string
 		expectedDomain string
 	}{
 		{
 			name: "single address",
-			addresses: []*mail.Address{
-				{Name: "Test User", Address: "user@example.com"},
-			},
+			emailContent: `From: Test User <user@example.com>
+Subject: Test Email
+Date: Mon, 15 Jan 2024 10:00:00 -0700
+
+Test content.
+`,
 			expectedDomain: "example.com",
 		},
 		{
-			name: "multiple addresses - use first",
-			addresses: []*mail.Address{
-				{Name: "Test User", Address: "user@example.com"},
-				{Name: "Other User", Address: "other@other.com"},
-			},
+			name: "multiple addresses",
+			emailContent: `From: Test User <user@example.com>, Other User <other@other.com>
+Subject: Test Email
+Date: Mon, 15 Jan 2024 10:00:00 -0700
+
+Test content.
+`,
 			expectedDomain: "example.com",
-		},
-		{
-			name:           "empty address list",
-			addresses:      []*mail.Address{},
-			expectedDomain: "",
 		},
 		{
 			name: "invalid email format",
-			addresses: []*mail.Address{
-				{Name: "Invalid", Address: "invalid-email"},
-			},
+			emailContent: `From: Invalid <invalid-email>
+Subject: Test Email
+Date: Mon, 15 Jan 2024 10:00:00 -0700
+
+Test content.
+`,
 			expectedDomain: "",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			domain := processor.extractDomain(tc.addresses)
-			assert.Equal(t, tc.expectedDomain, domain, "Extracted domain should match expected")
+			reader := strings.NewReader(tc.emailContent)
+			_, email, _ := processor.DetectProvider(reader)
+			
+			// Verify domain extraction by checking the From header
+			if email != nil && len(email.Headers.From) > 0 {
+				addr := email.Headers.From[0].Address
+				if tc.expectedDomain != "" {
+					assert.Contains(t, addr, "@"+tc.expectedDomain, 
+						"Email address should contain expected domain")
+				} else {
+					assert.NotContains(t, addr, "@", 
+						"Invalid email should not contain domain separator")
+				}
+			} else {
+				assert.Empty(t, tc.expectedDomain, 
+					"Expected empty domain when email parsing fails")
+			}
 		})
 	}
 }
@@ -724,7 +742,7 @@ func TestGmailTemplateProcess(t *testing.T) {
 		})).Return(caseModel, nil)
 
 		// Subject service mock
-		mockSubjectService.On("FindOrCreate", "https://spam-site.example.com", models.SubjectTypeURL).
+		mockSubjectService.On("FindOrCreateByURL", "https://spam-site.example.com", models.SubjectTypeURL).
 			Return(subject, nil)
 
 		// Communication service mock

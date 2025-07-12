@@ -8,7 +8,6 @@ import (
 
 	"github.com/emersion/go-imap"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
-	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/interfaces"
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
 )
@@ -17,7 +16,7 @@ import (
 type IMAPClient interface {
 	Start() error
 	Stop() error
-	SetEmailHandler(handler interfaces.EmailHandlerFunc)
+	SetEmailHandler(handler EmailHandlerFunc)
 }
 
 // IMAPClientDefault is the default implementation of the IMAP client
@@ -25,13 +24,13 @@ type IMAPClientDefault struct {
 	ctx          core.Context
 	logger       *core.Logger
 	config       *config.EmailConfig
-	client       interfaces.IMAPClientConn
+	client       IMAPClientConn
 	running      bool
 	stopChan     chan struct{}
 	waitGroup    sync.WaitGroup
-	emailHandler interfaces.EmailHandlerFunc
+	emailHandler EmailHandlerFunc
 	pollInterval time.Duration
-	dialer       interfaces.IMAPDialer // Allows replacing the dialer in tests
+	dialer       IMAPDialer // Allows replacing the dialer in tests
 }
 
 // NewIMAPClientFunc is a function type for creating IMAP clients (useful for testing)
@@ -59,7 +58,7 @@ func defaultNewIMAPClient(ctx core.Context, config *config.EmailConfig) IMAPClie
 }
 
 // SetEmailHandler sets the handler function for processing incoming emails
-func (c *IMAPClientDefault) SetEmailHandler(handler interfaces.EmailHandlerFunc) {
+func (c *IMAPClientDefault) SetEmailHandler(handler EmailHandlerFunc) {
 	c.emailHandler = handler
 }
 

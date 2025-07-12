@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	"go.lumeweb.com/portal-plugin-abuse/internal/service"
 	typesSvc "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
+	"go.lumeweb.com/portal-plugin-abuse/internal/workflow"
 	"go.lumeweb.com/portal/core"
 	coreService "go.lumeweb.com/portal/service"
 	"io/fs"
@@ -160,5 +161,25 @@ func init() {
 			}, nil
 		},
 		WebBundles: core.NewWebBundles(core.NewWebBundle(_fs, core.WithWebBundleTargetApps("admin")), core.NewWebBundle(_reportFs, core.WithWebBundleTargetApps("abuse"))),
+		Operations: func(ctx core.Context) ([]core.Operation, error) {
+			return []core.Operation{
+				workflow.NewAbuseScanOperation(ctx),
+			}, nil
+		},
+		Workflows: func(ctx core.Context) ([]core.WorkflowDefinition, error) {
+			return []core.WorkflowDefinition{
+				{
+					Name: workflow.AbuseScanWorkflowName,
+					Steps: []core.OperationStep{
+						{
+							Operation:       workflow.AbuseScanOperationName,
+							FailureBehavior: core.RetryStep,
+							Foreground:      false,
+						},
+					},
+					AutoTriggerFirstStep: true,
+				},
+			}, nil
+		},
 	})
 }

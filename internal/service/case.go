@@ -52,8 +52,7 @@ func NewCaseService() (core.Service, []core.ContextBuilderOption, error) {
 			}
 			svc.httpSvc = httpSvc
 
-			event.Listen[*event.BootCompleteEvent](ctx, event.EVENT_BOOT_COMPLETE, func(evt *event.BootCompleteEvent) error {
-				ctx := evt.Context()
+			core.Listen(ctx, event.EVENT_BOOT_COMPLETE, func(e *core.CoreEvent[event.BootCompleteEvent]) error {
 				// Get required services
 				reporterSvc := core.GetService[typesSvc.ReporterService](ctx, typesSvc.REPORTER_SERVICE)
 				if reporterSvc == nil {
@@ -127,7 +126,7 @@ func (s *CaseServiceDefault) SendCreationNotification(caseID uint) error {
 	}
 
 	// Generate thread ID for replies
-	threadID := s.emailSvc.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber)
+	threadID := s.emailSvc.GenerateCaseThreadID(caseModel.ReferenceNumber)
 
 	siteURL := s.httpSvc.APISubdomain(internal.PLUGIN_NAME, true)
 
@@ -236,7 +235,7 @@ func (s *CaseServiceDefault) SendStatusUpdateNotification(caseID uint, oldStatus
 	}
 
 	// Generate thread ID for replies
-	threadID := s.emailSvc.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber)
+	threadID := s.emailSvc.GenerateCaseThreadID(caseModel.ReferenceNumber)
 
 	siteURL := core.GetService[core.HTTPService](s.ctx, core.HTTP_SERVICE).APISubdomain("admin", true)
 
@@ -637,10 +636,18 @@ func (s *CaseServiceDefault) Get24HourAnalytics() (*typesSvc.CaseAnalytics, erro
 
 func (s *CaseServiceDefault) GetTypeSourceMatrix(timeRange string, filters []queryutil.CrudFilter) ([]models.CaseTypeSourceBreakdown, error) {
 	// Calculate time range
-	_, _, err := util.ParseTimeRange(timeRange)
+	start, end, err := util.ParseTimeRange(timeRange)
 	if err != nil {
 		return nil, util.ErrInvalidTimeRange
 	}
+
+	s.logger.Debug("GetTypeSourceMatrix time range",
+		zap.String("timeRange", timeRange),
+		zap.Time("start", start),
+		zap.Time("end", end))
+
+	s.logger.Debug("GetTypeSourceMatrix filters",
+		zap.Any("filters", filters))
 
 	var results []models.CaseTypeSourceBreakdown
 	var total int64
@@ -661,6 +668,10 @@ func (s *CaseServiceDefault) GetTypeSourceMatrix(timeRange string, filters []que
 			zap.String("timeRange", timeRange))
 		return nil, fmt.Errorf("failed to get case type source matrix: %w", err)
 	}
+
+	s.logger.Debug("GetTypeSourceMatrix results",
+		zap.Int("count", len(results)),
+		zap.Any("results", results))
 
 	return results, nil
 }

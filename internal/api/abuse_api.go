@@ -432,7 +432,7 @@ func (a *AbuseAPI) addComment(c echo.Context) error {
 		Type:      models.CommunicationTypeResponse,
 		Direction: models.CommunicationDirectionExternal,
 		Content:   req.Content,
-		ThreadID:  a.emailService.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber),
+		ThreadID:  a.emailService.GenerateCaseThreadID(caseModel.ReferenceNumber),
 	}
 
 	commService := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE)
@@ -541,7 +541,7 @@ func (a *AbuseAPI) uploadFile(c echo.Context) error {
 		Type:      models.CommunicationTypeNote,
 		Direction: models.CommunicationDirectionExternal,
 		Content:   fmt.Sprintf("Evidence uploaded: %s (%.2f MB)", header.Filename, float64(len(fileData))/1024/1024),
-		ThreadID:  a.emailService.GenerateCaseThreadID(caseID, caseModel.ReferenceNumber),
+		ThreadID:  a.emailService.GenerateCaseThreadID(caseModel.ReferenceNumber),
 	}
 
 	commService := core.GetService[svcTypes.CommunicationService](a.ctx, svcTypes.COMMUNICATION_SERVICE)

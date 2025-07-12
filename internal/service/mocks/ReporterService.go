@@ -223,6 +223,66 @@ func (_c *MockReporterService_GetByID_Call) RunAndReturn(run func(id uint) (*mod
 	return _c
 }
 
+// GetTrustStatus provides a mock function for the type MockReporterService
+func (_mock *MockReporterService) GetTrustStatus(reporter *models.Reporter) (models.ReporterTrustStatus, error) {
+	ret := _mock.Called(reporter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetTrustStatus")
+	}
+
+	var r0 models.ReporterTrustStatus
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(*models.Reporter) (models.ReporterTrustStatus, error)); ok {
+		return returnFunc(reporter)
+	}
+	if returnFunc, ok := ret.Get(0).(func(*models.Reporter) models.ReporterTrustStatus); ok {
+		r0 = returnFunc(reporter)
+	} else {
+		r0 = ret.Get(0).(models.ReporterTrustStatus)
+	}
+	if returnFunc, ok := ret.Get(1).(func(*models.Reporter) error); ok {
+		r1 = returnFunc(reporter)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockReporterService_GetTrustStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetTrustStatus'
+type MockReporterService_GetTrustStatus_Call struct {
+	*mock.Call
+}
+
+// GetTrustStatus is a helper method to define mock.On call
+//   - reporter *models.Reporter
+func (_e *MockReporterService_Expecter) GetTrustStatus(reporter interface{}) *MockReporterService_GetTrustStatus_Call {
+	return &MockReporterService_GetTrustStatus_Call{Call: _e.mock.On("GetTrustStatus", reporter)}
+}
+
+func (_c *MockReporterService_GetTrustStatus_Call) Run(run func(reporter *models.Reporter)) *MockReporterService_GetTrustStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *models.Reporter
+		if args[0] != nil {
+			arg0 = args[0].(*models.Reporter)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReporterService_GetTrustStatus_Call) Return(reporterTrustStatus models.ReporterTrustStatus, err error) *MockReporterService_GetTrustStatus_Call {
+	_c.Call.Return(reporterTrustStatus, err)
+	return _c
+}
+
+func (_c *MockReporterService_GetTrustStatus_Call) RunAndReturn(run func(reporter *models.Reporter) (models.ReporterTrustStatus, error)) *MockReporterService_GetTrustStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ID provides a mock function for the type MockReporterService
 func (_mock *MockReporterService) ID() string {
 	ret := _mock.Called()
@@ -263,6 +323,66 @@ func (_c *MockReporterService_ID_Call) Return(s string) *MockReporterService_ID_
 }
 
 func (_c *MockReporterService_ID_Call) RunAndReturn(run func() string) *MockReporterService_ID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IsTrusted provides a mock function for the type MockReporterService
+func (_mock *MockReporterService) IsTrusted(reporter *models.Reporter) (bool, error) {
+	ret := _mock.Called(reporter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsTrusted")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(*models.Reporter) (bool, error)); ok {
+		return returnFunc(reporter)
+	}
+	if returnFunc, ok := ret.Get(0).(func(*models.Reporter) bool); ok {
+		r0 = returnFunc(reporter)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(*models.Reporter) error); ok {
+		r1 = returnFunc(reporter)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockReporterService_IsTrusted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsTrusted'
+type MockReporterService_IsTrusted_Call struct {
+	*mock.Call
+}
+
+// IsTrusted is a helper method to define mock.On call
+//   - reporter *models.Reporter
+func (_e *MockReporterService_Expecter) IsTrusted(reporter interface{}) *MockReporterService_IsTrusted_Call {
+	return &MockReporterService_IsTrusted_Call{Call: _e.mock.On("IsTrusted", reporter)}
+}
+
+func (_c *MockReporterService_IsTrusted_Call) Run(run func(reporter *models.Reporter)) *MockReporterService_IsTrusted_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *models.Reporter
+		if args[0] != nil {
+			arg0 = args[0].(*models.Reporter)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReporterService_IsTrusted_Call) Return(b bool, err error) *MockReporterService_IsTrusted_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MockReporterService_IsTrusted_Call) RunAndReturn(run func(reporter *models.Reporter) (bool, error)) *MockReporterService_IsTrusted_Call {
 	_c.Call.Return(run)
 	return _c
 }

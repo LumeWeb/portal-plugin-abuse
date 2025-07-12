@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samber/lo"
+	"go.lumeweb.com/portal-plugin-abuse/internal"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
 	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/scanner"
 	"go.lumeweb.com/portal-plugin-abuse/internal/workflow"
@@ -85,11 +86,6 @@ func NewScanService() (core.Service, []core.ContextBuilderOption, error) {
 				return fmt.Errorf("cron service not available")
 			}
 
-			abuseWorkflow := workflow.NewAbuseScanWorkflow(ctx, coordinator, cronSvc, coreScanSvc, svc)
-			if err := abuseWorkflow.Register(); err != nil {
-				return fmt.Errorf("failed to register abuse scan workflow: %w", err)
-			}
-
 			storageSvc := core.GetService[core.StorageService](ctx, core.STORAGE_SERVICE)
 			if storageSvc == nil {
 				return fmt.Errorf("storage service not available")
@@ -102,7 +98,7 @@ func NewScanService() (core.Service, []core.ContextBuilderOption, error) {
 
 			svc.workflowSvc = coordinator
 
-			cfg := ctx.Config().GetService(typesSvc.SCAN_SERVICE).(*config.ScanConfig)
+			cfg := ctx.Config().GetService(internal.PLUGIN_NAME, typesSvc.SCAN_SERVICE).(*config.ScanConfig)
 
 			clamScanner := scanner.NewClamScanner(ctx, storageSvc, uploadSvc, cfg.ClamAV.Network, cfg.ClamAV.Address, cfg.ClamAV.MaxWorkers)
 			if err := coreScanSvc.RegisterScanner(clamScanner); err != nil {
@@ -142,10 +138,10 @@ func (s *ScanServiceDefault) CreateScanRequest(caseID uint) error {
 		return db.HandleDBError(err, "Create", "CaseScan", 0)
 	}
 
-	_, err = s.workflowSvc.StartWorkflow(s.ctx.GetContext(), workflow.AbuseScanWorkflowName, &workflow.AbuseScanWorkflowInitData{
+	_, err = s.workflowSvc.StartWorkflow(s.ctx.GetContext(), workflow.AbuseScanWorkflowName, core.WithWorkflowStructData(workflow.AbuseScanWorkflowData{
 		CaseScanID: scan.ID,
 		SubjectID:  scan.SubjectID,
-	})
+	}, "json"))
 
 	return err
 }

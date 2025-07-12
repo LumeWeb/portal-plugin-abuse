@@ -108,11 +108,40 @@ func (s *ReporterServiceDefault) Update(reporter *models.Reporter) error {
 	if result.Error != nil {
 		return db.HandleDBError(result.Error, "Update", "Reporter", reporter.ID)
 	}
-	
+
 	// Check if any rows were actually updated
 	if result.RowsAffected == 0 {
 		return db.ErrRecordNotFound
 	}
 
 	return nil
+}
+
+// GetTrustStatus checks if reporter is trusted based on case history
+func (s *ReporterServiceDefault) GetTrustStatus(reporter *models.Reporter) (models.ReporterTrustStatus, error) {
+	if reporter == nil || reporter.ID == 0 {
+		return models.ReporterNew, nil
+	}
+
+	var resolvedCases int64
+	err := s.db.Model(&models.Case{}).
+		Where("reporter_id = ? AND status IN (?)",
+			reporter.ID,
+			[]models.CaseStatus{models.CaseStatusClosed, models.CaseStatusResolved}).
+		Count(&resolvedCases).
+		Error
+	if err != nil {
+		return models.ReporterNew, db.HandleDBError(err, "Count", "Case", 0)
+	}
+
+	if resolvedCases > 0 {
+		return models.ReporterTrusted, nil
+	}
+	return models.ReporterUntrusted, nil
+}
+
+// IsTrusted is a convenience wrapper around GetTrustStatus
+func (s *ReporterServiceDefault) IsTrusted(reporter *models.Reporter) (bool, error) {
+	status, err := s.GetTrustStatus(reporter)
+	return status == models.ReporterTrusted, err
 }

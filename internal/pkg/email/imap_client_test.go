@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
-	emailmocks "go.lumeweb.com/portal-plugin-abuse/internal/pkg/email/mocks"
 	coreTesting "go.lumeweb.com/portal/core/testing"
 )
 
@@ -53,11 +52,11 @@ func TestIMAPClientDefault_Start(t *testing.T) {
 	}
 
 	// Create mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 	mockConn.On("Login", "test@example.com", "password123").Return(nil)
 
 	// Create mock IMAP dialer
-	mockDialer := emailmocks.NewMockIMAPDialer(t)
+	mockDialer := NewMockIMAPDialer(t)
 	mockDialer.On("DialTLS", "imap.test.com:993", (*tls.Config)(nil)).Return(mockConn, nil)
 
 	// Create the IMAP client with our mock dialer
@@ -131,7 +130,7 @@ func TestIMAPClientDefault_Start_ConnectionError(t *testing.T) {
 	}
 
 	// Create mock IMAP dialer that returns an error
-	mockDialer := emailmocks.NewMockIMAPDialer(t)
+	mockDialer := NewMockIMAPDialer(t)
 	mockDialer.On("DialTLS", "imap.test.com:993", (*tls.Config)(nil)).Return(nil, assert.AnError)
 
 	// Create the IMAP client with our mock dialer
@@ -170,11 +169,11 @@ func TestIMAPClientDefault_Start_LoginError(t *testing.T) {
 	}
 
 	// Create mock IMAP client connection that fails login
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 	mockConn.On("Login", "test@example.com", "password123").Return(assert.AnError)
 
 	// Create mock IMAP dialer
-	mockDialer := emailmocks.NewMockIMAPDialer(t)
+	mockDialer := NewMockIMAPDialer(t)
 	mockDialer.On("DialTLS", "imap.test.com:993", (*tls.Config)(nil)).Return(mockConn, nil)
 
 	// Create the IMAP client with our mock dialer
@@ -205,7 +204,7 @@ func TestIMAPClientDefault_Stop(t *testing.T) {
 	ctx := coreTesting.NewTestContext(t)
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 	mockConn.On("Logout").Return(nil)
 
 	// Create the IMAP client and set it as running
@@ -282,7 +281,7 @@ func TestIMAPClientDefault_CheckForNewEmails(t *testing.T) {
 	}
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 
 	// Setup mock expectations for the sequence of IMAP calls
 	mockConn.On("Select", "INBOX", false).Return(mboxStatus, nil)
@@ -402,7 +401,7 @@ func TestIMAPClientDefault_CheckForNewEmails_NoHandler(t *testing.T) {
 	ctx := coreTesting.NewTestContext(t)
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 
 	// Create the IMAP client
 	imapClient := &IMAPClientDefault{
@@ -431,7 +430,7 @@ func TestIMAPClientDefault_CheckForNewEmails_SelectError(t *testing.T) {
 	}
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 
 	// Setup mock to return an error on Select
 	mockConn.On("Select", "INBOX", false).Return(&imap.MailboxStatus{}, assert.AnError)
@@ -464,7 +463,7 @@ func TestIMAPClientDefault_CheckForNewEmails_NoMessages(t *testing.T) {
 	}
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 
 	// Setup mock to return an empty mailbox
 	mboxStatus := &imap.MailboxStatus{
@@ -500,7 +499,7 @@ func TestIMAPClientDefault_CheckForNewEmails_SearchError(t *testing.T) {
 	}
 
 	// Create a mock IMAP client connection
-	mockConn := emailmocks.NewMockIMAPClientConn(t)
+	mockConn := NewMockIMAPClientConn(t)
 
 	// Setup mock to return a mailbox with messages
 	mboxStatus := &imap.MailboxStatus{

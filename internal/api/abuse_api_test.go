@@ -104,10 +104,10 @@ func TestGetAbuseCase_NotFound(t *testing.T) {
 
 		// Create valid JWT token
 		seed := wallet.NewSeedPhrase()
-		if err := ctx.Config().Update("core.identity", seed); err != nil {
+		if err := ctx.Config().Set(ctx, "core.identity", seed); err != nil {
 			tb.Error(err)
 		}
-		if err := ctx.Config().Update("core.domain", "example.com"); err != nil {
+		if err := ctx.Config().Set(ctx, "core.domain", "example.com"); err != nil {
 			tb.Error(err)
 		}
 
@@ -160,10 +160,10 @@ func TestGetCase_Success(t *testing.T) {
 
 		// Create valid JWT token
 		seed := wallet.NewSeedPhrase()
-		if err := ctx.Config().Update("core.identity", seed); err != nil {
+		if err := ctx.Config().Set(ctx, "core.identity", seed); err != nil {
 			tb.Error(err)
 		}
-		if err := ctx.Config().Update("core.domain", "example.com"); err != nil {
+		if err := ctx.Config().Set(ctx, "core.domain", "example.com"); err != nil {
 			tb.Error(err)
 		}
 
@@ -340,10 +340,10 @@ func TestRefreshToken_Success(t *testing.T) {
 		cookieSetter := adapter.NewCookieSetter(configProvider)
 
 		seed := wallet.NewSeedPhrase()
-		if err := ctx.Config().Update("core.identity", seed); err != nil {
+		if err := ctx.Config().Set(ctx, "core.identity", seed); err != nil {
 			tb.Error(err)
 		}
-		if err := ctx.Config().Update("core.domain", "example.com"); err != nil {
+		if err := ctx.Config().Set(ctx, "core.domain", "example.com"); err != nil {
 			tb.Error(err)
 		}
 
@@ -354,12 +354,12 @@ func TestRefreshToken_Success(t *testing.T) {
 					Audience: []string{string(jwt.PurposeLogin)},
 				},
 			}),
-			jwt.WithModifiers(jwt.ClaimModifier(func(claims gjwt.Claims) {
+			jwt.WithModifiers(func(claims gjwt.Claims) {
 				if abuseClaims, ok := claims.(*tjwt.AbuseJWTClaims); ok {
 					abuseClaims.CaseID = 1
 					abuseClaims.ReporterID = 2
 				}
-			})),
+			}),
 		)
 		assert.NoError(tb, err)
 

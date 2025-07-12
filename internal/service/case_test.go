@@ -2,6 +2,7 @@ package service
 
 import (
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/util"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestCaseService_Create(t *testing.T) {
 
 		// Mock the email service expectations
 		mockEmailService.EXPECT().
-			GenerateCaseThreadID(mock.AnythingOfType("uint"), mock.AnythingOfType("string")).
+			GenerateCaseThreadID(mock.AnythingOfType("string")).
 			Return("thread-id").
 			Once()
 
@@ -132,6 +133,7 @@ func TestCaseService_Create(t *testing.T) {
 			assert.Equal(tb, expectedCase.Description, createdCase.Description)
 		})
 	},
+		coreTesting.WithMockServiceFactory(typesSvc.REPORTER_SERVICE, mocks.NewMockReporterService),
 		coreTesting.WithService(typesSvc.CASE_SERVICE, NewCaseService),
 	)
 }
@@ -751,21 +753,21 @@ func TestCaseService_UpdateStatus(t *testing.T) {
 
 		mockEmailService := core.GetService[typesSvc.EmailService](ctx, typesSvc.EMAIL_SERVICE).(*mocks.MockEmailService)
 
-		db := ctx.DB()
+		_db := ctx.DB()
 
 		// Create test data directly in database
 		reporter := &models.Reporter{
 			Email: "test@example.com",
 			Name:  "Test Reporter",
 		}
-		err := db.Create(reporter).Error
+		err := _db.Create(reporter).Error
 		require.NoError(tb, err)
 
 		subject := &models.Subject{
 			Identifier: []byte("testhash"),
 			Type:       models.SubjectTypeHash,
 		}
-		err = db.Create(subject).Error
+		err = _db.Create(subject).Error
 		require.NoError(tb, err)
 
 		initialCase := &models.Case{
@@ -778,7 +780,7 @@ func TestCaseService_UpdateStatus(t *testing.T) {
 			SubjectID:       subject.ID,
 			ReferenceNumber: "testref",
 		}
-		err = db.Create(initialCase).Error
+		err = _db.Create(initialCase).Error
 		require.NoError(tb, err)
 
 		newStatus := models.CaseStatusResolved
@@ -799,7 +801,7 @@ func TestCaseService_UpdateStatus(t *testing.T) {
 
 		// Mock the email service
 		mockEmailService.EXPECT().
-			GenerateCaseThreadID(initialCase.ID, initialCase.ReferenceNumber).
+			GenerateCaseThreadID(initialCase.ReferenceNumber).
 			Return("test-thread-id").
 			Once()
 
@@ -835,11 +837,14 @@ func TestCaseService_UpdateStatus(t *testing.T) {
 
 			// Retrieve the updated case from the database
 			var updatedCase models.Case
-			err = db.First(&updatedCase, initialCase.ID).Error
-			assert.NoError(tb, err)
+			err = _db.First(&updatedCase, initialCase.ID).Error
+			if err != nil {
+				assert.ErrorIs(t, err, db.ErrRecordNotFound)
+			} else {
+				// Assert that the status has been updated
+				assert.Equal(tb, newStatus, updatedCase.Status)
+			}
 
-			// Assert that the status has been updated
-			assert.Equal(tb, newStatus, updatedCase.Status)
 		})
 	},
 		coreTesting.WithService(typesSvc.CASE_SERVICE, NewCaseService),

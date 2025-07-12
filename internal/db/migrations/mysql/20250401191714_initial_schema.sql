@@ -1,4 +1,6 @@
--- migrate:up
+-- +goose Up
+-- +goose StatementBegin
+
 
 -- Stores reporter information with system user linkage
 -- Uses InnoDB for ACID compliance on critical reporting data
@@ -271,24 +273,23 @@ SELECT
     csh.changed_at AS changed_at,
     csh.old_status AS from_status,
     csh.new_status AS to_status,
-    csh.case_type AS case_type,
+    ac.type AS case_type,
     COUNT(*) AS transition_count
 FROM case_status_histories csh
 JOIN abuse_cases ac ON csh.case_id = ac.id
 WHERE ac.deleted_at IS NULL
-GROUP BY transition_date, csh.changed_at, csh.old_status, csh.new_status, csh.case_type
+GROUP BY transition_date, csh.changed_at, csh.old_status, csh.new_status, ac.type
 
 -- Case type/source breakdown view
 CREATE OR REPLACE VIEW abuse_case_type_source_breakdown AS
 SELECT
-    DATE(created_at) AS case_date,
     `type` AS case_type,
     source AS report_source,
     priority,
     COUNT(*) AS case_count
 FROM abuse_cases
 WHERE deleted_at IS NULL
-GROUP BY case_date, `type`, source, priority;
+GROUP BY `type`, source, priority;
 
 -- Communication hourly counts view
 CREATE OR REPLACE VIEW abuse_communication_hourly_counts AS
@@ -306,8 +307,10 @@ SELECT
     COUNT(*) AS block_count
 FROM abuse_blocklist
 GROUP BY block_date, reason;
+-- +goose StatementEnd
 
--- migrate:down
+-- +goose Down
+-- +goose StatementBegin
 
 -- Drop tables in reverse order of creation to respect FK constraints
 DROP VIEW IF EXISTS abuse_case_daily_resolutions;
@@ -330,3 +333,4 @@ DROP TABLE IF EXISTS abuse_communications;
 DROP TABLE IF EXISTS abuse_cases;
 DROP TABLE IF EXISTS abuse_subjects;
 DROP TABLE IF EXISTS abuse_reporters;
+-- +goose StatementEnd

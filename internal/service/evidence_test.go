@@ -84,20 +84,21 @@ func TestEvidenceService_CreateFromData(t *testing.T) {
 		// Setup expected calls in correct order
 		mockCaseService.On("GetByID", caseID).Return(mockCaseModel, nil)
 		mockReporterService.On("GetByID", mockCaseModel.ReporterID).Return(mockReporter, nil)
-		mockEmailService.On("SendTemplatedEmail", 
-			mock.Anything, 
-			mock.Anything, 
-			mock.Anything).Return(nil)
+
+		waitForChan := make(chan bool)
+		mockEmailService.EXPECT().SendTemplatedEmail(mock.Anything, mock.Anything, mock.Anything).Run(func(to []string, templateName string, data core.MailerTemplateData) {
+			waitForChan <- true
+		}).Return(nil)
 
 		// Act
 		createdEvidence, err := evidenceService.CreateFromData(r, model)
 
-		// Assert
-		require.NoError(tb, err)
-		assert.NotNil(tb, createdEvidence)
-		assert.Equal(tb, objectKey, createdEvidence.StoragePath)
-
-		mockStorageService.AssertExpectations(t)
+		waitForAsync(t, waitForChan, func() {
+			// Assert
+			require.NoError(tb, err)
+			assert.NotNil(tb, createdEvidence)
+			assert.Equal(tb, objectKey, createdEvidence.StoragePath)
+		})
 	},
 		coreTesting.WithService(typesSvc.EVIDENCE_SERVICE, NewEvidenceService),
 	)

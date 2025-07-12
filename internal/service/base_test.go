@@ -41,8 +41,8 @@ func TestMain(m *testing.M) {
 
 					return coreTesting.ProcessCtxOptions(ctx, coreTesting.WrapCoreOption(startupOpt))
 				},
-				coreTesting.WithServiceConfig(typesSvc.EMAIL_SERVICE, &config.EmailConfig{}),
-				coreTesting.WithServiceConfig(typesSvc.SCAN_SERVICE, &config.ScanConfig{}),
+				coreTesting.WithServiceConfig(internal.PLUGIN_NAME, typesSvc.EMAIL_SERVICE, &config.EmailConfig{}),
+				coreTesting.WithServiceConfig(internal.PLUGIN_NAME, typesSvc.SCAN_SERVICE, &config.ScanConfig{}),
 				coreTesting.WithSQLitePluginMigrations(internal.PLUGIN_NAME, migrations.GetSQLite()),
 			)
 		},
