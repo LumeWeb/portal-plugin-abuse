@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samber/lo"
-	"go.lumeweb.com/portal-plugin-abuse/internal"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
 	"go.lumeweb.com/portal-plugin-abuse/internal/pkg/scanner"
 	"go.lumeweb.com/portal-plugin-abuse/internal/workflow"
@@ -35,6 +34,7 @@ func (s *ScanServiceDefault) Config() (any, error) {
 }
 
 var _ typesSvc.ScanService = (*ScanServiceDefault)(nil)
+var _ core.Configurable = (*ScanServiceDefault)(nil)
 
 // NewScanService creates a new scan service instance
 func NewScanService() (core.Service, []core.ContextBuilderOption, error) {
@@ -98,7 +98,7 @@ func NewScanService() (core.Service, []core.ContextBuilderOption, error) {
 
 			svc.workflowSvc = coordinator
 
-			cfg := ctx.Config().GetService(internal.PLUGIN_NAME, typesSvc.SCAN_SERVICE).(*config.ScanConfig)
+			cfg := core.GetServiceConfig[*config.ScanConfig](ctx, typesSvc.SCAN_SERVICE)
 
 			clamScanner := scanner.NewClamScanner(ctx, storageSvc, uploadSvc, cfg.ClamAV.Network, cfg.ClamAV.Address, cfg.ClamAV.MaxWorkers)
 			if err := coreScanSvc.RegisterScanner(clamScanner); err != nil {
