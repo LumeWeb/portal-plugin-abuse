@@ -145,7 +145,10 @@ func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 				priorityDeterminer := email.NewPriorityDeterminer()
 				reviewDecider := email.NewReviewDecider()
 				arfProcessor := email.NewARFProcessor(ctx, contentExtractor)
-				classifier := email.NewClassifier(svc.logger, contentScorer, headerAnalyzer, priorityDeterminer, reviewDecider)
+				classifier, err := email.NewClassifier(svc.logger, contentScorer, headerAnalyzer, priorityDeterminer, reviewDecider)
+				if err != nil {
+					return err
+				}
 				threadDetector := email.NewThreadDetector(ctx)
 				templateProcessor := email.NewTemplateProcessor(ctx, contentExtractor)
 
