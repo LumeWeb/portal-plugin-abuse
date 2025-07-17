@@ -13,8 +13,8 @@ import (
 	"go.lumeweb.com/portal-plugin-abuse/internal/workflow"
 	"go.lumeweb.com/portal/core"
 	coreService "go.lumeweb.com/portal/service"
-	"io/fs"
-	"os"
+	portal_plugin_abuse "go.lumeweb.com/web/go/portal-plugin-abuse"
+	portal_plugin_abuse_report "go.lumeweb.com/web/go/portal-plugin-abuse-report"
 )
 
 //go:embed templates/*.tpl
@@ -26,28 +26,6 @@ func init() {
 	templates, err := coreService.MailerTemplatesFromEmbed(&emailTemplates, "templates")
 	if err != nil {
 		panic(err)
-	}
-
-	var _fs fs.FS
-	var _reportFs fs.FS
-
-	envPath := os.Getenv("ABUSE_PLUGIN_BUNDLE_PATH")
-	reportEnvPath := os.Getenv("ABUSE_REPORT_PLUGIN_BUNDLE_PATH")
-
-	if envPath != "" {
-		_fs = core.NewWebBundleLiveFS(envPath)
-	}
-
-	if reportEnvPath != "" {
-		_reportFs = core.NewWebBundleLiveFS(reportEnvPath)
-	}
-
-	if _fs == nil {
-		panic("plugin: no plugin bundle found")
-	}
-
-	if _reportFs == nil {
-		panic("plugin: no plugin bundle found")
 	}
 
 	core.RegisterPlugin(core.PluginInfo{
@@ -160,7 +138,7 @@ func init() {
 				},
 			}, nil
 		},
-		WebBundles: core.NewWebBundles(core.NewWebBundle(_fs, core.WithWebBundleTargetApps("admin")), core.NewWebBundle(_reportFs, core.WithWebBundleTargetApps("abuse"))),
+		WebBundles: core.NewWebBundles(core.NewWebBundle(portal_plugin_abuse.GetFS(), core.WithWebBundleTargetApps("admin")), core.NewWebBundle(portal_plugin_abuse_report.GetFS(), core.WithWebBundleTargetApps("abuse"))),
 		Operations: func(ctx core.Context) ([]core.Operation, error) {
 			return []core.Operation{
 				workflow.NewAbuseScanOperation(ctx),

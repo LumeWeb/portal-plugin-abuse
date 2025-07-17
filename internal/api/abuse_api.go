@@ -29,6 +29,7 @@ import (
 	"go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
 	"go.lumeweb.com/portal/core"
+	portal_abuse_report "go.lumeweb.com/web/go/portal-abuse-report"
 	"go.uber.org/zap"
 )
 
@@ -109,7 +110,7 @@ func (a *AbuseAPI) OpenAPIInfo() router.APIInfoDefinition {
 // Configure sets up the API routes
 func (a *AbuseAPI) Configure(r router.Router, accessSvc core.AccessService) error {
 	// Setup static file serving
-	router.MustDefaultStaticEnvSetup(r, "ABUSE_REPORT_APP_BUNDLE_PATH")
+	router.MustDefaultStaticSetup(r, portal_abuse_report.GetFS())
 
 	// Create an API group
 	apiGroup, err := r.Group("/api")
