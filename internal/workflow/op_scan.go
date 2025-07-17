@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samber/lo"
-	"go.lumeweb.com/portal-plugin-abuse/internal"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	pluginModels "go.lumeweb.com/portal-plugin-abuse/internal/db/models"
 	svcTypes "go.lumeweb.com/portal-plugin-abuse/internal/types/service"
@@ -201,10 +200,10 @@ func NewAbuseScanOperation(ctx core.Context) core.Operation {
 		"",
 		&ScanOperationHandler{
 			OperationHelper: core.NewOperationHelper(ctx),
-			ctx:            ctx,
-			logger:         ctx.Logger(),
-			scanSvc:        core.GetService[svcTypes.ScanService](ctx, svcTypes.SCAN_SERVICE),
-			coreScanSvc:    core.GetService[core.ContentScannerService](ctx, core.CONTENT_SCANNER_SERVICE),
+			ctx:             ctx,
+			logger:          ctx.Logger(),
+			scanSvc:         core.GetService[svcTypes.ScanService](ctx, svcTypes.SCAN_SERVICE),
+			coreScanSvc:     core.GetService[core.ContentScannerService](ctx, core.CONTENT_SCANNER_SERVICE),
 		},
 	)
 }
