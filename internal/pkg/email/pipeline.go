@@ -137,8 +137,6 @@ func (p *PipelineDefault) Start(processor Processor) error {
 				zap.String("mailbox", cfg.IMAPMailbox),
 				zap.Int("poll_interval_seconds", cfg.PollInterval))
 		} else {
-			// Legacy SMTP server configuration - not used anymore
-			p.logger.Warn("SMTP server mode is deprecated. Please configure IMAP settings for email receiving.")
 			p.logger.Info("Email receiving is disabled")
 		}
 	} else {
