@@ -104,11 +104,10 @@ func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 		core.ContextWithStartupFunc(func(ctx core.Context) error {
 			svc.BaseService.InitializeBaseService(ctx, svc)
 
-			// Get the email config from context
-			emailConfig := core.GetServiceConfig[*config.EmailConfig](ctx, typesSvc.EMAIL_SERVICE)
-			svc.config = emailConfig
-
 			core.Listen(ctx, event.EVENT_BOOT_COMPLETE, func(e *core.CoreEvent[event.BootCompleteEvent]) error {
+				// Get the email config from context
+				emailConfig := core.GetServiceConfig[*config.EmailConfig](ctx, typesSvc.EMAIL_SERVICE)
+				svc.config = emailConfig
 				// Get required services
 				mailerSvc := core.GetService[core.MailerService](ctx, core.MAILER_SERVICE)
 				caseSvc := core.GetService[typesSvc.CaseService](ctx, typesSvc.CASE_SERVICE)
@@ -166,7 +165,7 @@ func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 					return svc.config
 				})
 
-				if err := pipeline.Start(svc.handleProcessedEmail); err != nil {
+				if err = pipeline.Start(svc.handleProcessedEmail); err != nil {
 					svc.pipeline = pipeline
 					return fmt.Errorf("failed to start pipeline: %w", err)
 				}
