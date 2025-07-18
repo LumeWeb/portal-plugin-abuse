@@ -374,7 +374,7 @@ Feedback Text:
 func (s *EmailServiceDefault) ProcessIncomingEmail(ctx context.Context, rawEmail io.Reader) error {
 	result, err := s.pipeline.ProcessEmail(ctx, rawEmail)
 	if err != nil {
-		if errors.Is(err, ErrEmailAlreadyProcessed) {
+		if errors.Is(err, email.ErrEmailAlreadyProcessed) {
 			return nil // Silently skip already processed emails
 		}
 		return db.HandleDBError(err, "ProcessIncomingEmail", "Email", 0)
@@ -384,7 +384,7 @@ func (s *EmailServiceDefault) ProcessIncomingEmail(ctx context.Context, rawEmail
 	if result != nil && result.Email != nil {
 		if err := s.MarkEmailProcessed(result.Email); err != nil {
 			s.logger.Error("Failed to mark email as processed",
-				zap.String("message_id", result.Email.Headers.MessageID),
+				zap.String("message_id", string(result.Email.Headers.MessageID)),
 				zap.Error(err))
 		}
 	}
@@ -602,7 +602,7 @@ func (s *EmailServiceDefault) MarkEmailProcessed(email *letters.Email) error {
 	}
 
 	processed := models.ProcessedEmail{
-		MessageID: email.Headers.MessageID,
+		MessageID: string(email.Headers.MessageID),
 		Hash:      hash,
 	}
 
