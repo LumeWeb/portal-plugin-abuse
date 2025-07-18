@@ -221,31 +221,27 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 			p.recordError()
 			return nil, err
 		}
+
+		// Still create a case model and classify even for ARF reports
+		classify := p.classifier.ClassifyEmail(parsedEmail)
+		_case := &models.Case{
+			Type:        classify.CaseType,
+			Status:      models.CaseStatusNew,
+			Priority:    classify.Priority,
+			Description: fmt.Sprintf("ARF Report: %s", arfReport.FeedbackType),
+			Source:      models.ReportSourceEmail,
+		}
+
 		p.metrics.mutex.Lock()
 		p.metrics.totalARF++
 		p.metrics.totalProcessed++
 		p.metrics.mutex.Unlock()
+		
 		return &ProcessingResult{
 			ARFData: arfReport,
+			Case:    _case,
 			IsARF:   true,
 			Email:   parsedEmail,
-		}, nil
-	}
-	// Try provider template match
-	if providerID, _, ok := p.templateProc.DetectProvider(bytes.NewReader(rawBytes)); ok {
-		// Convert the email to a reader for processing
-		emailReader := bytes.NewReader(rawBytes)
-		if err := p.templateProc.Process(ctx, emailReader, providerID); err != nil {
-			p.recordError()
-			return nil, err
-		}
-		p.metrics.mutex.Lock()
-		p.metrics.totalTemplateMatches++
-		p.metrics.totalProcessed++
-		p.metrics.mutex.Unlock()
-		return &ProcessingResult{
-			ProviderID: providerID,
-			Email:      parsedEmail,
 		}, nil
 	}
 	// Get reporter ID from email headers
