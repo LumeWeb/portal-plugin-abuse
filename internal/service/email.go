@@ -184,8 +184,9 @@ func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 					return svc.IsEmailProcessed(email)
 				})
 
-				if err := pipeline.Start(svc.handleProcessedEmail); err != nil {
-					svc.pipeline = pipeline
+				svc.pipeline = pipeline
+
+				if err = pipeline.Start(svc.handleProcessedEmail); err != nil {
 					return fmt.Errorf("failed to start pipeline: %w", err)
 				}
 
