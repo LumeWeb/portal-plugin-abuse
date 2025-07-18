@@ -62,7 +62,6 @@ var (
 		"harassment":     7,
 		"bully":          7,
 		"intimidate":     7,
-		"abuse":          7,
 		"target":         7,
 		"victim":         7,
 		"hateful":        7,
@@ -111,8 +110,6 @@ var (
 		"community guidelines": 7,
 
 		// Weight 10 - More specific content violation indicators
-		"takedown":              10,
-		"intellectual property": 10,
 		"proprietary":           10,
 		"illegal content":       10,
 		"promoting violence":    10,
@@ -185,15 +182,11 @@ var (
 		"rights":    5,
 
 		// Weight 7 - General copyright terms
-		"dmca":         7,
 		"infringement": 7,
-		"violation":    7,
 
 		// Weight 10 - Specific violation terms
 		"takedown":              10,
-		"cease and desist":      10,
 		"intellectual property": 10,
-		"unauthorized use":      10,
 		"distribution":          10,
 		"pirated content":       10,
 		"bootleg":               10,
@@ -201,7 +194,6 @@ var (
 		// Weight 12 - Legal action terms
 		"copyright infringement": 12,
 		"dmca notice":            12,
-		"legal action":           12,
 		"court order":            12,
 		"lawsuit":                12,
 		"settlement":             12,
@@ -234,13 +226,11 @@ var (
 		"ddos":                10,
 		"botnet":              10,
 		"mining":              10,
-		"exploit":             10,
 		"credential stuffing": 10,
 		"spamming links":      10,
 
 		// Weight 12 - Severe abuse indicators
 		"cryptocurrency mining": 12,
-		"command and control":   12,
 		"denial of service":     12,
 		"brute force":           12,
 		"port scanning":         12,
@@ -250,13 +240,10 @@ var (
 	// Terms associated with malware and security threats - with severity weights (1-15)
 	MalwareTerms = map[string]int{
 		// Weight 5 - Basic security concerns
-		"security":             5,
 		"malicious":            5,
-		"suspicious":           5,
 		"vulnerability":        5,
 		"scan":                 5,
 		"antivirus":            5,
-		"security alert":       5,
 		"potentially unwanted": 5,
 
 		// Weight 7 - More specific malware indicators
@@ -296,7 +283,6 @@ var (
 		"quickly":  3,
 
 		// Weight 5 - Higher urgency
-		"urgent":              5,
 		"asap":                5,
 		"immediately":         5,
 		"expedite":            5,
@@ -354,7 +340,6 @@ var (
 	// Patterns that may indicate threats with severity weights (1-15)
 	ThreatPatterns = map[string]int{
 		// Weight 3 - Basic security concerns
-		"suspicious":       3,
 		"concerning":       3,
 		"unusual activity": 3,
 
@@ -363,21 +348,14 @@ var (
 		"attack":              5,
 		"compromise":          5,
 		"hack":                5,
-		"exploit":             5,
-		"vulnerability":       5,
 		"breach":              5,
 		"security issue":      5,
-		"unauthorized access": 5,
 
 		// Weight 7 - Severe threats
-		"data breach":            7,
 		"security breach":        7,
 		"account hijacking":      7,
 		"targeted attack":        7,
-		"coordinated attack":     7,
 		"system compromise":      7,
-		"critical vulnerability": 7,
-		"zero-day":               7,
 		"active exploit":         7,
 		"widespread attack":      7,
 		"security emergency":     7,
