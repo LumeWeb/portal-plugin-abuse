@@ -116,9 +116,6 @@ type CaseService interface {
 	// Search performs a more advanced search on cases
 	Search(ctx context.Context, query string, filters []queryutil.CrudFilter, pagination queryutil.Pagination) ([]models.Case, int64, error)
 
-	// LinkSubject associates a subject with a case
-	LinkSubject(caseID, subjectID uint) error
-
 	// SendCreationNotification sends an email notification when a case is created
 	SendCreationNotification(caseID uint) error
 
