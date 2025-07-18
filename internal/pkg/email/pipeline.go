@@ -236,7 +236,7 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 		p.metrics.totalARF++
 		p.metrics.totalProcessed++
 		p.metrics.mutex.Unlock()
-		
+
 		return &ProcessingResult{
 			ARFData: arfReport,
 			Case:    _case,
@@ -259,24 +259,18 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 	if threadMatch == nil {
 		// ClassifyEmail content only when needed
 		classify := p.classifier.ClassifyEmail(parsedEmail)
-		
+
 		// Get subject from email headers
 		subject := parsedEmail.Headers.Subject
 		if subject == "" {
 			subject = "(no subject)"
 		}
 
-		// Get first 200 characters of email text as description
-		description := parsedEmail.Text
-		if len(description) > 200 {
-			description = description[:200] + "..."
-		}
-
 		_case := &models.Case{
 			Type:        classify.CaseType,
 			Status:      models.CaseStatusNew,
 			Priority:    classify.Priority,
-			Description: fmt.Sprintf("Email Subject: %s\nContent: %s", subject, description),
+			Description: fmt.Sprintf("Email Subject: %s\nContent: %s", subject, parsedEmail.Text),
 			Source:      models.ReportSourceEmail,
 		}
 		p.metrics.mutex.Lock()
