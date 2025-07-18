@@ -134,10 +134,9 @@ func (p *PipelineDefault) Start(processor Processor) error {
 			// Use IMAP client for fetching emails
 			p.emailClient = NewIMAPClient(p.ctx, cfg)
 
-			// Configure IMAP client handler to adapt to legacy interface
+			// Configure IMAP client handler to use the processor
 			p.emailClient.SetEmailHandler(func(ctx context.Context, data io.Reader) error {
-				_, err := p.ProcessEmail(ctx, data)
-				return err
+				return p.processor(ctx, data)
 			})
 
 			if err := p.emailClient.Start(); err != nil {
