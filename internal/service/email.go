@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/mnako/letters"
+	"github.com/samber/lo"
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
@@ -15,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"io"
+	"net/mail"
 	"strings"
 )
 
@@ -24,6 +28,15 @@ const (
 )
 
 var _ core.Configurable = (*EmailServiceDefault)(nil)
+
+// emailContent represents the structured content of an email for hashing
+type emailContent struct {
+	MessageID string   `json:"message_id"`
+	Subject   string   `json:"subject"`
+	From      []string `json:"from"`
+	Text      string   `json:"text"`
+	HTML      string   `json:"html"`
+}
 
 // EmailServiceDefault implements the EmailService interface
 type EmailServiceDefault struct {
@@ -163,9 +176,12 @@ func NewEmailService() (core.Service, []core.ContextBuilderOption, error) {
 					templateProcessor,
 				)
 
-				// Set config callback that uses our service config
+				// Set callbacks that use our service
 				pipeline.SetConfigCallback(func() *config.EmailConfig {
 					return svc.config
+				})
+				pipeline.SetProcessedCheckCallback(func(email *letters.Email) (bool, error) {
+					return svc.IsEmailProcessed(email)
 				})
 
 				if err := pipeline.Start(svc.handleProcessedEmail); err != nil {
@@ -356,8 +372,24 @@ Feedback Text:
 
 // ProcessIncomingEmail processes an incoming email through the pipeline
 func (s *EmailServiceDefault) ProcessIncomingEmail(ctx context.Context, rawEmail io.Reader) error {
-	_, err := s.pipeline.ProcessEmail(ctx, rawEmail)
-	return db.HandleDBError(err, "ProcessIncomingEmail", "Email", 0)
+	result, err := s.pipeline.ProcessEmail(ctx, rawEmail)
+	if err != nil {
+		if errors.Is(err, ErrEmailAlreadyProcessed) {
+			return nil // Silently skip already processed emails
+		}
+		return db.HandleDBError(err, "ProcessIncomingEmail", "Email", 0)
+	}
+
+	// Mark email as processed if we got a result
+	if result != nil && result.Email != nil {
+		if err := s.MarkEmailProcessed(result.Email); err != nil {
+			s.logger.Error("Failed to mark email as processed",
+				zap.String("message_id", result.Email.Headers.MessageID),
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 // handleThreadMatch adds communication to an existing case
@@ -529,4 +561,77 @@ func (s *EmailServiceDefault) extractAndCreateSubjects(ctx context.Context, case
 func (s *EmailServiceDefault) GenerateCaseThreadID(referenceNumber string) string {
 	domain := s.ctx.Config().Config().Core.Domain
 	return fmt.Sprintf("<case.%s.%s@%s>", referenceNumber, s.ctx.Config().Config().Core.PortalName, domain)
+}
+
+func (s *EmailServiceDefault) IsEmailProcessed(email *letters.Email) (bool, error) {
+	// First try using Message-ID if available
+	if email.Headers.MessageID != "" {
+		var processed models.ProcessedEmail
+		result := s.db.Where("message_id = ?", email.Headers.MessageID).First(&processed)
+		if result.Error == nil {
+			return true, nil
+		}
+		if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return false, fmt.Errorf("error checking Message-ID: %w", result.Error)
+		}
+	}
+
+	// Fall back to structured hash of email content
+	hash, err := s.hashEmailContent(email)
+	if err != nil {
+		return false, fmt.Errorf("failed to hash email content: %w", err)
+	}
+
+	var processed models.ProcessedEmail
+	result := s.db.Where("hash = ?", hash).First(&processed)
+	if result.Error == nil {
+		return true, nil
+	}
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return false, fmt.Errorf("error checking email hash: %w", result.Error)
+}
+
+// hashEmailContent creates a consistent hash of the email's structured content
+// MarkEmailProcessed records an email as processed to prevent duplicate handling
+func (s *EmailServiceDefault) MarkEmailProcessed(email *letters.Email) error {
+	hash, err := s.hashEmailContent(email)
+	if err != nil {
+		return fmt.Errorf("failed to hash email content: %w", err)
+	}
+
+	processed := models.ProcessedEmail{
+		MessageID: email.Headers.MessageID,
+		Hash:      hash,
+	}
+
+	if err := s.db.Create(&processed).Error; err != nil {
+		return fmt.Errorf("failed to mark email as processed: %w", err)
+	}
+
+	return nil
+}
+
+func (s *EmailServiceDefault) hashEmailContent(email *letters.Email) ([]byte, error) {
+	content := emailContent{
+		MessageID: string(email.Headers.MessageID),
+		Subject:   email.Headers.Subject,
+		Text:      email.Text,
+		HTML:      email.HTML,
+	}
+
+	// Convert From addresses to strings using lo.Map
+	content.From = lo.Map(email.Headers.From, func(from *mail.Address, _ int) string {
+		return from.String()
+	})
+
+	// Marshal to JSON for consistent hashing
+	jsonData, err := json.Marshal(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal email content: %w", err)
+	}
+
+	hash := sha256.Sum256(jsonData)
+	return hash[:], nil
 }

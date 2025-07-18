@@ -3,17 +3,20 @@ package email
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/mnako/letters"
 	"go.lumeweb.com/portal-plugin-abuse/internal/db/models"
+	"go.lumeweb.com/portal/core"
+	"go.uber.org/zap"
 	"io"
 	"sync"
 	"time"
 
 	"go.lumeweb.com/portal-plugin-abuse/internal/config"
-	"go.lumeweb.com/portal/core"
-	"go.uber.org/zap"
 )
+
+var ErrEmailAlreadyProcessed = errors.New("email already processed")
 
 // EmailPipeline defines the interface for the email processing pipeline
 type Pipeline interface {
@@ -31,6 +34,9 @@ type Pipeline interface {
 
 	// SetConfigCallback sets a function to get the current email config
 	SetConfigCallback(cb func() *config.EmailConfig)
+
+	// SetProcessedCheckCallback sets a function to check if email was processed
+	SetProcessedCheckCallback(cb func(email *letters.Email) (bool, error))
 }
 
 // EmailProcessor defines a function type for processing emails
@@ -56,6 +62,7 @@ type ProcessingResult struct {
 	ThreadMatch *ThreadMatch
 	IsARF       bool
 	ProviderID  string
+	Email       *letters.Email
 }
 
 // PipelineDefault is the default implementation of the Pipeline interface
@@ -69,6 +76,7 @@ type PipelineDefault struct {
 	threadDetector *ThreadDetector
 	templateProc   TemplateProcessor
 	processor      Processor
+	processedCheck func(email *letters.Email) (bool, error)
 	lock           sync.Mutex
 	started        bool
 	stopped        bool
@@ -78,6 +86,11 @@ type PipelineDefault struct {
 // SetConfigCallback sets the function to get current email config
 func (p *PipelineDefault) SetConfigCallback(cb func() *config.EmailConfig) {
 	p.getConfig = cb
+}
+
+// SetProcessedCheckCallback sets the function to check if email was processed
+func (p *PipelineDefault) SetProcessedCheckCallback(cb func(email *letters.Email) (bool, error)) {
+	p.processedCheck = cb
 }
 
 // NewPipeline creates a new email pipeline with required dependencies
@@ -179,13 +192,30 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 		p.metrics.mutex.Unlock()
 	}()
 
+	// Parse the email and keep raw bytes
+	parsedEmail, rawBytes, err := parseEmailWithRaw(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse email: %w", err)
+	}
+
+	// Check if email is already processed using callback if available
+	if p.processedCheck != nil {
+		processed, err := p.processedCheck(parsedEmail)
+		if err != nil {
+			p.logger.Error("Error checking if email was processed", zap.Error(err))
+		}
+		if processed {
+			return nil, ErrEmailAlreadyProcessed
+		}
+	}
+
 	// Track metrics
 	p.metrics.mutex.Lock()
 	p.metrics.totalReceived++
 	p.metrics.mutex.Unlock()
 
-	// Try ARF processing first
-	isARF, buf := p.arfProcessor.IsARF(data)
+	// Try ARF processing first using the raw bytes
+	isARF, buf := p.arfProcessor.IsARF(bytes.NewReader(rawBytes))
 	if isARF {
 		arfReport, err := p.arfProcessor.Process(ctx, buf)
 		if err != nil {
@@ -199,16 +229,9 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 		return &ProcessingResult{
 			ARFData: arfReport,
 			IsARF:   true,
+			Email:   parsedEmail,
 		}, nil
 	}
-
-	// Parse regular email using the buffered data
-	email, rawBytes, err := parseEmailWithRaw(buf)
-	if err != nil {
-		p.recordError()
-		return nil, fmt.Errorf("failed to parse email: %w", err)
-	}
-
 	// Try provider template match
 	if providerID, _, ok := p.templateProc.DetectProvider(bytes.NewReader(rawBytes)); ok {
 		// Convert the email to a reader for processing
@@ -221,25 +244,28 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 		p.metrics.totalTemplateMatches++
 		p.metrics.totalProcessed++
 		p.metrics.mutex.Unlock()
-		return &ProcessingResult{ProviderID: providerID}, nil
+		return &ProcessingResult{
+			ProviderID: providerID,
+			Email:      parsedEmail,
+		}, nil
 	}
 	// Get reporter ID from email headers
 	var reporterID uint
-	if len(email.Headers.From) > 0 {
+	if len(parsedEmail.Headers.From) > 0 {
 		// In real implementation we would look up the reporter ID from the email address
 		// For now just use 0 as a placeholder
 		reporterID = 0
 	}
 
 	// Detect existing thread using actual reporter ID
-	threadMatch, _ := p.threadDetector.DetectThread(email, reporterID)
+	threadMatch, _ := p.threadDetector.DetectThread(parsedEmail, reporterID)
 
 	// Create new case if no thread match
 	if threadMatch == nil {
 		// ClassifyEmail content only when needed
-		classify := p.classifier.ClassifyEmail(email)
+		classify := p.classifier.ClassifyEmail(parsedEmail)
 		// Get first 200 characters of email text as description
-		description := email.Text
+		description := parsedEmail.Text
 		if len(description) > 200 {
 			description = description[:200] + "..."
 		}
@@ -248,21 +274,27 @@ func (p *PipelineDefault) ProcessEmail(ctx context.Context, data io.Reader) (*Pr
 			Type:        classify.CaseType,
 			Status:      models.CaseStatusNew,
 			Priority:    classify.Priority,
-			Description: fmt.Sprintf("Email Subject: %s\nContent: %s", email.Headers.Subject, description),
+			Description: fmt.Sprintf("Email Subject: %s\nContent: %s", parsedEmail.Headers.Subject, description),
 			Source:      models.ReportSourceEmail,
 		}
 		p.metrics.mutex.Lock()
 		p.metrics.totalNew++
 		p.metrics.totalProcessed++
 		p.metrics.mutex.Unlock()
-		return &ProcessingResult{Case: _case}, nil
+		return &ProcessingResult{
+			Case:  _case,
+			Email: parsedEmail,
+		}, nil
 	}
 
 	p.metrics.mutex.Lock()
 	p.metrics.totalThreaded++
 	p.metrics.totalProcessed++
 	p.metrics.mutex.Unlock()
-	return &ProcessingResult{ThreadMatch: threadMatch}, nil
+	return &ProcessingResult{
+		ThreadMatch: threadMatch,
+		Email:       parsedEmail,
+	}, nil
 }
 
 // recordError records an error metric

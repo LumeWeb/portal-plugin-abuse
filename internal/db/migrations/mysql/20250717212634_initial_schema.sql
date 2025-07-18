@@ -177,6 +177,22 @@ CREATE INDEX idx_case_status_histories_case_id
 CREATE INDEX idx_case_status_histories_changed_at 
     ON case_status_histories (changed_at);
 
+-- Processed email tracking to prevent duplicate processing
+CREATE TABLE IF NOT EXISTS abuse_processed_emails (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    created_at DATETIME(6),
+    updated_at DATETIME(6),
+    deleted_at DATETIME(6),
+    message_id VARCHAR(255),
+    hash VARBINARY(32) NOT NULL, -- SHA-256 hash (32 bytes)
+    processed_at DATETIME(6) NOT NULL,
+    error BOOLEAN DEFAULT FALSE
+) ENGINE = InnoDB;
+CREATE INDEX idx_abuse_processed_emails_hash
+    ON abuse_processed_emails (hash);
+CREATE INDEX idx_abuse_processed_emails_message_id
+    ON abuse_processed_emails (message_id);
+
 -- Case status duration view
 CREATE OR REPLACE VIEW abuse_case_status_durations AS
 SELECT
@@ -324,6 +340,10 @@ DROP VIEW IF EXISTS abuse_case_source_breakdown;
 DROP VIEW IF EXISTS abuse_case_duration_distribution;
 DROP VIEW IF EXISTS abuse_case_status_durations;
 DROP VIEW IF EXISTS abuse_case_daily_metrics;
+DROP INDEX IF EXISTS idx_abuse_processed_emails_message_id;
+DROP INDEX IF EXISTS idx_abuse_processed_emails_hash;
+DROP TABLE IF EXISTS abuse_processed_emails;
+
 DROP TABLE IF EXISTS case_status_histories;
 DROP TABLE IF EXISTS abuse_case_scans;
 DROP TABLE IF EXISTS abuse_blocklist;
