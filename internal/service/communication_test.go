@@ -44,7 +44,6 @@ func TestCommunicationService_Create(t *testing.T) {
 			Source:          models.ReportSourceWebForm,
 			ReporterID:      reporterID,
 			SubjectID:       1, // Must match the subject created below
-			ContentHash:     "testhash",
 		}
 
 		reporter := &models.Reporter{

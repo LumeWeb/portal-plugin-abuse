@@ -71,7 +71,6 @@ func TestEvidenceService_CreateFromData(t *testing.T) {
 			Source:          models.ReportSourceWebForm,
 			ReporterID:      1,
 			SubjectID:       1, // Must match the subject created below
-			ContentHash:     "testhash",
 		}
 
 		mockReporter := &models.Reporter{
