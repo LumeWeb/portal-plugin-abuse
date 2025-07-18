@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/mnako/letters"
 	"io"
 
 	"go.lumeweb.com/portal/core"
@@ -20,4 +21,10 @@ type EmailService interface {
 
 	// GenerateCaseThreadID generates a unique thread ID for a case
 	GenerateCaseThreadID(referenceNumber string) string
+
+	// IsEmailProcessed checks if an email has already been processed
+	IsEmailProcessed(email *letters.Email) (bool, error)
+	
+	// MarkEmailProcessed marks an email as processed to prevent duplicate handling
+	MarkEmailProcessed(email *letters.Email) error
 }

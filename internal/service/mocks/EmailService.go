@@ -8,6 +8,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/mnako/letters"
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/portal/core"
 )
@@ -185,6 +186,66 @@ func (_c *MockEmailService_ID_Call) Return(s string) *MockEmailService_ID_Call {
 }
 
 func (_c *MockEmailService_ID_Call) RunAndReturn(run func() string) *MockEmailService_ID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IsEmailProcessed provides a mock function for the type MockEmailService
+func (_mock *MockEmailService) IsEmailProcessed(email *letters.Email) (bool, error) {
+	ret := _mock.Called(email)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsEmailProcessed")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(*letters.Email) (bool, error)); ok {
+		return returnFunc(email)
+	}
+	if returnFunc, ok := ret.Get(0).(func(*letters.Email) bool); ok {
+		r0 = returnFunc(email)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(*letters.Email) error); ok {
+		r1 = returnFunc(email)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockEmailService_IsEmailProcessed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsEmailProcessed'
+type MockEmailService_IsEmailProcessed_Call struct {
+	*mock.Call
+}
+
+// IsEmailProcessed is a helper method to define mock.On call
+//   - email *letters.Email
+func (_e *MockEmailService_Expecter) IsEmailProcessed(email interface{}) *MockEmailService_IsEmailProcessed_Call {
+	return &MockEmailService_IsEmailProcessed_Call{Call: _e.mock.On("IsEmailProcessed", email)}
+}
+
+func (_c *MockEmailService_IsEmailProcessed_Call) Run(run func(email *letters.Email)) *MockEmailService_IsEmailProcessed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *letters.Email
+		if args[0] != nil {
+			arg0 = args[0].(*letters.Email)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockEmailService_IsEmailProcessed_Call) Return(b bool, err error) *MockEmailService_IsEmailProcessed_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MockEmailService_IsEmailProcessed_Call) RunAndReturn(run func(email *letters.Email) (bool, error)) *MockEmailService_IsEmailProcessed_Call {
 	_c.Call.Return(run)
 	return _c
 }

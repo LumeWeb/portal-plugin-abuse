@@ -137,7 +137,7 @@ create table if not exists abuse_tokens (
     deleted_at DATETIME,
     case_id INTEGER not null,
     reporter_id INTEGER not null,
-    token token BLOB NOT NULL CHECK(LENGTH(token) = 32),
+    token BLOB NOT NULL CHECK(LENGTH(token) = 32),
     expires_at DATETIME,
     revoked_at DATETIME,
     last_used_at DATETIME,
@@ -334,6 +334,22 @@ CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_status_priority
 CREATE INDEX IF NOT EXISTS idx_abuse_case_scans_scheduled_for
     ON abuse_case_scans (scheduled_for);
 
+-- Processed email tracking to prevent duplicate processing
+CREATE TABLE IF NOT EXISTS abuse_processed_emails (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME,
+    updated_at DATETIME,
+    deleted_at DATETIME,
+    message_id VARCHAR(255),
+    hash VARBINARY(32) NOT NULL, -- SHA-256 hash (32 bytes)
+    processed_at DATETIME NOT NULL,
+    error BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_abuse_processed_emails_hash
+    ON abuse_processed_emails (hash);
+CREATE INDEX IF NOT EXISTS idx_abuse_processed_emails_message_id
+    ON abuse_processed_emails (message_id);
+
 -- Daily case metrics view for time-series analytics
 CREATE VIEW IF NOT EXISTS abuse_case_daily_metrics AS
 SELECT
@@ -366,6 +382,10 @@ DROP VIEW IF EXISTS abuse_case_daily_metrics;
 DROP TABLE IF EXISTS case_status_histories;
 DROP INDEX IF EXISTS idx_case_status_histories_case_id;
 DROP INDEX IF EXISTS idx_case_status_histories_changed_at;
+DROP INDEX IF EXISTS idx_abuse_processed_emails_message_id;
+DROP INDEX IF EXISTS idx_abuse_processed_emails_hash;
+DROP TABLE IF EXISTS abuse_processed_emails;
+
 DROP INDEX IF EXISTS idx_abuse_case_scans_scheduled_for;
 DROP INDEX IF EXISTS idx_abuse_case_scans_status_priority;
 DROP INDEX IF EXISTS idx_abuse_case_scans_subject_id;

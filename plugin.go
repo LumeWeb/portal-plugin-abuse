@@ -50,6 +50,7 @@ func init() {
 			&models.CaseScan{},
 			&models.Evidence{},
 			&models.BlockList{},
+			&models.ProcessedEmail{},
 		},
 		Migrations: core.DBMigration{
 			core.DB_TYPE_MYSQL:  migrations.GetMySQL(),
