@@ -28,8 +28,6 @@ type ScoringResults struct {
 }
 
 // ContentScorerFunc is a type alias for scoring functions
-type ContentScorerFunc func(text string) int
-
 // ContentScorer interface for scoring content against abuse categories
 type ContentScorer interface {
 	Score(text string) ScoringResults
@@ -42,7 +40,6 @@ type DictionaryContentScorer struct {
 	logger     *core.Logger
 	terms      map[models.CaseType]map[string]int // Map of CaseType to term dictionaries
 	regexCache map[string]*regexp.Regexp
-	scorers    map[SeverityScoreType]ContentScorerFunc
 	cacheMutex sync.RWMutex // Protects regexCache access
 }
 
@@ -59,32 +56,35 @@ func NewDictionaryContentScorer(logger *core.Logger) *DictionaryContentScorer {
 		models.CaseTypeMalware:                 MalwareTerms,
 	}
 
-	scorers := map[SeverityScoreType]ContentScorerFunc{
-		ScoreTypeUrgency:   func(text string) int { return scoreDictionary(logger, text, UrgencyPatterns, "urgency") },
-		ScoreTypeSensitive: func(text string) int { return scoreDictionary(logger, text, SensitivePatterns, "sensitive") },
-		ScoreTypeThreat:    func(text string) int { return scoreDictionary(logger, text, ThreatPatterns, "threat") },
-	}
-
 	return &DictionaryContentScorer{
 		logger:     logger,
 		terms:      terms,
 		regexCache: make(map[string]*regexp.Regexp),
-		scorers:    scorers,
 	}
 }
 
 // Score scores the given text and attachments and returns all scoring results
 func (s *DictionaryContentScorer) Score(text string) ScoringResults {
-	contentScores := make(map[models.CaseType]int)
 	text = strings.ToLower(text)
+	contentScores := make(map[models.CaseType]int)
 
+	// Pre-process text by removing exclusion patterns
+	for _, rule := range ExclusionRules {
+		if regex := s.getRegex(rule.Pattern); regex != nil {
+			text = regex.ReplaceAllString(text, "")
+		}
+	}
+
+	// Score all categories
 	for caseType, termDict := range s.terms {
 		contentScores[caseType] = scoreDictionary(s.logger, text, termDict, string(caseType))
 	}
 
-	scores := make(map[SeverityScoreType]int)
-	for scoreType, scorerFunc := range s.scorers {
-		scores[scoreType] = scorerFunc(text)
+	// Calculate severity scores from content scores
+	scores := map[SeverityScoreType]int{
+		ScoreTypeUrgency:   contentScores[models.CaseTypeSpam],
+		ScoreTypeSensitive: contentScores[models.CaseTypeHarassment],
+		ScoreTypeThreat:    contentScores[models.CaseTypeMalware],
 	}
 
 	return ScoringResults{
@@ -122,14 +122,15 @@ func scoreDictionary(logger *core.Logger, text string, terms map[string]int, sco
 		for term, weight := range terms {
 			term = strings.ToLower(term)
 			if cleanWord == term {
-				logger.Debug("Matched "+scoreType+" term", zap.String("term", term), zap.Int("weight", weight))
+				logger.Debug("Matched "+scoreType+" term",
+					zap.String("term", term),
+					zap.Int("weight", weight))
 				score += weight
 			}
 		}
 	}
 	return score
 }
-
 func isStopWord(word string) bool {
 	if _, ok := StopWordsMap[word]; ok {
 		return true
@@ -144,7 +145,7 @@ func (s *DictionaryContentScorer) getRegex(pattern string) *regexp.Regexp {
 	s.cacheMutex.RLock()
 	regex, ok := s.regexCache[pattern]
 	s.cacheMutex.RUnlock()
-	
+
 	if ok {
 		return regex
 	}

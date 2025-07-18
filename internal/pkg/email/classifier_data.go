@@ -4,6 +4,11 @@ import (
 	"github.com/samber/lo"
 )
 
+// ExclusionRule defines patterns that suppress content when matched
+type ExclusionRule struct {
+	Pattern string // Regex pattern to match
+}
+
 // Package-level term dictionaries for classification
 var (
 	// Terms associated with spam - with severity weights (1-15)
@@ -110,10 +115,10 @@ var (
 		"community guidelines": 7,
 
 		// Weight 10 - More specific content violation indicators
-		"proprietary":           10,
-		"illegal content":       10,
-		"promoting violence":    10,
-		"glorifying violence":   10,
+		"proprietary":         10,
+		"illegal content":     10,
+		"promoting violence":  10,
+		"glorifying violence": 10,
 
 		// Weight 12 - Severe content violation indicators
 		"trademark infringement":  12,
@@ -344,22 +349,22 @@ var (
 		"unusual activity": 3,
 
 		// Weight 5 - More specific threats
-		"threat":              5,
-		"attack":              5,
-		"compromise":          5,
-		"hack":                5,
-		"breach":              5,
-		"security issue":      5,
+		"threat":         5,
+		"attack":         5,
+		"compromise":     5,
+		"hack":           5,
+		"breach":         5,
+		"security issue": 5,
 
 		// Weight 7 - Severe threats
-		"security breach":        7,
-		"account hijacking":      7,
-		"targeted attack":        7,
-		"system compromise":      7,
-		"active exploit":         7,
-		"widespread attack":      7,
-		"security emergency":     7,
-		"ongoing breach":         7,
+		"security breach":    7,
+		"account hijacking":  7,
+		"targeted attack":    7,
+		"system compromise":  7,
+		"active exploit":     7,
+		"widespread attack":  7,
+		"security emergency": 7,
+		"ongoing breach":     7,
 	}
 
 	// Known legitimate no-reply patterns
@@ -550,4 +555,25 @@ var (
 	StopWordsMap = lo.SliceToMap(StopWords, func(word string) (string, bool) {
 		return word, true
 	})
+
+	// ExclusionRules defines patterns that prevent false positives
+	ExclusionRules = []ExclusionRule{
+		{
+			Pattern: `(?i)\babuse\s+complaints?\b`,
+		},
+		{
+			Pattern: `(?i)\breports?\s+of\s+abuses?\b`,
+		},
+		{
+			Pattern: `(?i)\b(?:abuse|security)\s+(?:report|complaint)s?\s+received\b`,
+		},
+		{
+			Pattern: `(?i)\b(?:terms of service|privacy policy)\s+updates?\b`,
+		},
+		{
+			Pattern: `(?i)\bfraudulent\s+contents?\b`,
+		}, {
+			Pattern: `(?i)\babuse\s+department\b`,
+		},
+	}
 )
