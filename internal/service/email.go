@@ -92,21 +92,32 @@ func (s *EmailServiceDefault) determinePriority(arfData *email.ARFReport) models
 	return models.CasePriorityMedium
 }
 
-func (s *EmailServiceDefault) getOrCreateReporter(email string) (*models.Reporter, error) {
-	reporterSvc := core.GetService[typesSvc.ReporterService](s.ctx, typesSvc.REPORTER_SERVICE)
-	if reporterSvc == nil {
+func (s *EmailServiceDefault) getOrCreateReporter(email string, name ...string) (*models.Reporter, error) {
+	if s.reporterSvc == nil {
 		return nil, fmt.Errorf("reporter service not available")
 	}
 
-	reporter, err := reporterSvc.GetByEmail(email)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Create new reporter
-		return reporterSvc.Create(&models.Reporter{
-			Email: email,
-			Name:  email, // Default name to email
-		})
+	reporter, err := s.reporterSvc.GetByEmail(email)
+	if err == nil {
+		// Update name if we have one and reporter doesn't
+		if len(name) > 0 && name[0] != "" && reporter.Name == "" {
+			reporter.Name = name[0]
+			if err = s.reporterSvc.Update(reporter); err != nil {
+				return nil, err
+			}
+		}
+		return reporter, nil
 	}
-	return reporter, err
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	// Create new reporter
+	return s.reporterSvc.Create(&models.Reporter{
+		Email: email,
+		Name:  lo.Ternary(len(name) > 0 && name[0] != "", name[0], email),
+	})
 }
 
 // Ensure EmailServiceDefault implements the interface
@@ -206,106 +217,123 @@ func (s *EmailServiceDefault) ID() string {
 func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.Reader) error {
 	result, err := s.pipeline.ProcessEmail(ctx, data)
 	if err != nil {
+		if errors.Is(err, email.ErrEmailAlreadyProcessed) {
+			return nil
+		}
 		return err
 	}
 
 	switch {
 	case result.IsARF:
-		if result.ARFData == nil {
-			return fmt.Errorf("ARF report processing failed - no report data")
+		return s.handleARFReport(result.ARFData, result.Case)
+	case result.Case != nil:
+		return s.handleNewCase(result.Case, result.Email)
+	case result.ThreadMatch != nil:
+		return s.handleThreadMatch(ctx, result.ThreadMatch, data)
+	default:
+		return fmt.Errorf("unknown email processing result type")
+	}
+}
+
+func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseModel *models.Case) error {
+	if arfData == nil {
+		return fmt.Errorf("ARF report processing failed - no report data")
+	}
+	if caseModel == nil {
+		return fmt.Errorf("ARF report processing failed - no case data")
+	}
+
+	// Get reporter service to create or update reporter
+	if s.reporterSvc == nil {
+		return fmt.Errorf("reporter service not available")
+	}
+
+	// Create or get reporter based on email address
+	var reporter *models.Reporter
+	var err error
+	if arfData.ReporterEmail != "" {
+		reporter, err = s.reporterSvc.GetByEmail(arfData.ReporterEmail)
+		if err != nil && !db.IsRecordNotFound(err) {
+			s.logger.Error("Failed to get reporter by email", zap.Error(err))
+			return db.HandleDBError(err, "GetByEmail", "Reporter", 0)
 		}
 
-		// Get reporter service to create or update reporter
-		if s.reporterSvc == nil {
-			return fmt.Errorf("reporter service not available")
-		}
-
-		// Create or get reporter based on email address
-		var reporter *models.Reporter
-		if result.ARFData.ReporterEmail != "" {
-			reporter, err = s.reporterSvc.GetByEmail(result.ARFData.ReporterEmail)
-			if err != nil && !db.IsRecordNotFound(err) {
-				s.logger.Error("Failed to get reporter by email", zap.Error(err))
-				return db.HandleDBError(err, "GetByEmail", "Reporter", 0)
+		// If not found, create a new reporter
+		if reporter == nil || db.IsRecordNotFound(err) {
+			reporter = &models.Reporter{
+				Email: arfData.ReporterEmail,
+				Name:  arfData.ReporterEmail,
 			}
-
-			// If not found, create a new reporter
-			if reporter == nil || db.IsRecordNotFound(err) {
-				reporter = &models.Reporter{
-					Email: result.ARFData.ReporterEmail,
-					Name:  result.ARFData.ReporterEmail,
-				}
-				reporter, err = s.reporterSvc.Create(reporter)
-				if err != nil {
-					s.logger.Error("Failed to create reporter", zap.Error(err))
-					return db.HandleDBError(err, "Create", "Reporter", 0)
-				}
-			}
-		} else {
-			// For ARF reports without reporter email, use generic
-			s.logger.Info("Using default reporter values",
-				zap.String("email", defaultARFReporterEmail),
-				zap.String("name", defaultARFReporterName))
-
-			reporter, err = s.reporterSvc.GetByEmail(defaultARFReporterEmail)
-			if err != nil && !db.IsRecordNotFound(err) {
-				s.logger.Error("Failed to get generic reporter",
-					zap.Error(err),
-					zap.String("email", defaultARFReporterEmail))
-				return fmt.Errorf("failed to get generic reporter: %w", err)
-			}
-
-			// If not found, create generic reporter
-			if reporter == nil || db.IsRecordNotFound(err) {
-				reporter = &models.Reporter{
-					Email: defaultARFReporterEmail,
-					Name:  defaultARFReporterName,
-				}
-				reporter, err = s.reporterSvc.Create(reporter)
-				if err != nil {
-					s.logger.Error("Failed to create generic reporter",
-						zap.Error(err),
-						zap.String("email", defaultARFReporterEmail),
-						zap.String("name", defaultARFReporterEmail))
-					return db.HandleDBError(err, "Create", "Reporter", 0)
-				}
-
-				s.logger.Info("Created new generic reporter",
-					zap.Uint("reporter_id", reporter.ID),
-					zap.String("email", reporter.Email),
-					zap.String("name", reporter.Name))
+			reporter, err = s.reporterSvc.Create(reporter)
+			if err != nil {
+				s.logger.Error("Failed to create reporter", zap.Error(err))
+				return db.HandleDBError(err, "Create", "Reporter", 0)
 			}
 		}
+	} else {
+		// For ARF reports without reporter email, use generic
+		s.logger.Info("Using default reporter values",
+			zap.String("email", defaultARFReporterEmail),
+			zap.String("name", defaultARFReporterName))
 
-		// Check if reporter is trusted
-		isTrusted, err := s.reporterSvc.IsTrusted(reporter)
-		if err != nil {
-			s.logger.Error("Failed to check reporter trust status",
+		reporter, err = s.reporterSvc.GetByEmail(defaultARFReporterEmail)
+		if err != nil && !db.IsRecordNotFound(err) {
+			s.logger.Error("Failed to get generic reporter",
 				zap.Error(err),
-				zap.Uint("reporter_id", reporter.ID))
-			return fmt.Errorf("failed to check reporter trust status: %w", err)
+				zap.String("email", defaultARFReporterEmail))
+			return fmt.Errorf("failed to get generic reporter: %w", err)
 		}
 
-		// Create the case - only needs review if reporter is not trusted
-		caseModel := &models.Case{
-			ReporterID:      reporter.ID,
-			Type:            s.determineCaseType(result.ARFData.FeedbackType),
-			Status:          models.CaseStatusNew,
-			Source:          models.ReportSourceEmail,
-			Description:     result.ARFData.FeedbackText,
-			NeedsReview:     !isTrusted,
-			Priority:        models.CasePriorityMedium,
-			ReferenceNumber: "", // Will be generated by the service
-		}
+		// If not found, create generic reporter
+		if reporter == nil || db.IsRecordNotFound(err) {
+			reporter = &models.Reporter{
+				Email: defaultARFReporterEmail,
+				Name:  defaultARFReporterName,
+			}
+			reporter, err = s.reporterSvc.Create(reporter)
+			if err != nil {
+				s.logger.Error("Failed to create generic reporter",
+					zap.Error(err),
+					zap.String("email", defaultARFReporterEmail),
+					zap.String("name", defaultARFReporterName))
+				return db.HandleDBError(err, "Create", "Reporter", 0)
+			}
 
-		createdCase, err := s.caseSvc.Create(caseModel)
-		if err != nil {
-			s.logger.Error("Failed to create case", zap.Error(err))
-			return db.HandleDBError(err, "Create", "Case", 0)
+			s.logger.Info("Created new generic reporter",
+				zap.Uint("reporter_id", reporter.ID),
+				zap.String("email", reporter.Email),
+				zap.String("name", reporter.Name))
 		}
+	}
 
-		// Create communication record
-		arfDetails := fmt.Sprintf(`
+	// Update case model with pipeline-generated data
+	caseModel.ReporterID = reporter.ID
+	caseModel.Type = s.determineCaseType(arfData.FeedbackType)
+	caseModel.Status = models.CaseStatusNew
+	caseModel.Source = models.ReportSourceEmail
+	caseModel.Description = arfData.FeedbackText
+	caseModel.Priority = s.determinePriority(arfData)
+
+	// Check if reporter is trusted
+	isTrusted, err := s.reporterSvc.IsTrusted(reporter)
+	if err != nil {
+		s.logger.Error("Failed to check reporter trust status",
+			zap.Error(err),
+			zap.Uint("reporter_id", reporter.ID))
+		return fmt.Errorf("failed to check reporter trust status: %w", err)
+	}
+
+	// Only needs review if reporter is not trusted
+	caseModel.NeedsReview = !isTrusted
+
+	createdCase, err := s.caseSvc.Create(caseModel)
+	if err != nil {
+		s.logger.Error("Failed to create case", zap.Error(err))
+		return db.HandleDBError(err, "Create", "Case", 0)
+	}
+
+	// Create communication record
+	arfDetails := fmt.Sprintf(`
 ARF Report Details:
 -------------------
 Feedback Type: %s
@@ -323,52 +351,73 @@ Machine Readable Data:
 Feedback Text:
 %s
 `,
-			result.ARFData.FeedbackType,
-			result.ARFData.SourceIP,
-			result.ARFData.UserAgent,
-			result.ARFData.ArrivalDate,
-			result.ARFData.OriginalFrom,
-			result.ARFData.OriginalRecipient,
-			result.ARFData.OriginalSubject,
-			s.formatMachineReadable(result.ARFData.MachineReadable),
-			result.ARFData.FeedbackText,
-		)
+		arfData.FeedbackType,
+		arfData.SourceIP,
+		arfData.UserAgent,
+		arfData.ArrivalDate,
+		arfData.OriginalFrom,
+		arfData.OriginalRecipient,
+		arfData.OriginalSubject,
+		s.formatMachineReadable(arfData.MachineReadable),
+		arfData.FeedbackText,
+	)
 
-		comm := &models.Communication{
-			CaseID:    createdCase.ID,
-			SenderID:  reporter.ID,
-			Type:      models.CommunicationTypeEmail,
-			Direction: models.CommunicationDirectionExternal,
-			Content:   arfDetails,
-			ThreadID:  fmt.Sprintf("ARF-REPORT-%d@system", createdCase.ID),
-		}
-
-		if _, err := s.commSvc.Create(comm); err != nil {
-			return db.HandleDBError(err, "handleThreadMatch", "Communication", 0)
-		}
-
-		// Extract and create subjects and link to case
-		s.extractAndCreateSubjects(ctx, createdCase.ID, result.ARFData)
-
-		s.logger.Info("Successfully processed ARF report",
-			zap.String("feedback_type", result.ARFData.FeedbackType),
-			zap.String("case_ref", createdCase.ReferenceNumber),
-			zap.Uint("case_id", createdCase.ID))
-
-		return nil
-
-	case result.ThreadMatch != nil:
-		// Handle thread match by adding to existing case
-		if err := s.handleThreadMatch(ctx, result.ThreadMatch, data); err != nil {
-			s.logger.Error("Failed to handle thread match",
-				zap.Error(err),
-				zap.Uint("case_id", result.ThreadMatch.CaseID))
-			return fmt.Errorf("failed to handle thread match: %w", err)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unhandled pipeline result")
+	comm := &models.Communication{
+		CaseID:    createdCase.ID,
+		SenderID:  reporter.ID,
+		Type:      models.CommunicationTypeEmail,
+		Direction: models.CommunicationDirectionExternal,
+		Content:   arfDetails,
+		ThreadID:  fmt.Sprintf("ARF-REPORT-%d@system", createdCase.ID),
 	}
+
+	if _, err := s.commSvc.Create(comm); err != nil {
+		return db.HandleDBError(err, "handleThreadMatch", "Communication", 0)
+	}
+
+	// Extract and link subjects from ARF report content
+	s.extractAndLinkURLSubjects(createdCase.ID, arfData.FeedbackText)
+	s.extractAndLinkHashSubjects(createdCase.ID, arfData.FeedbackText)
+
+	s.logger.Info("Successfully processed ARF report",
+		zap.String("feedback_type", arfData.FeedbackType),
+		zap.String("case_ref", createdCase.ReferenceNumber),
+		zap.Uint("case_id", createdCase.ID))
+
+	return nil
+}
+
+func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *letters.Email) error {
+	// Create the case
+	createdCase, err := s.caseSvc.Create(caseModel)
+	if err != nil {
+		return fmt.Errorf("failed to create case: %w", err)
+	}
+
+	// Create communication record
+	comm := &models.Communication{
+		CaseID:    createdCase.ID,
+		SenderID:  caseModel.ReporterID,
+		Type:      models.CommunicationTypeEmail,
+		Direction: models.CommunicationDirectionExternal,
+		Content:   email.Text,
+		ThreadID:  string(email.Headers.MessageID),
+	}
+
+	if _, err := s.commSvc.Create(comm); err != nil {
+		return fmt.Errorf("failed to create communication: %w", err)
+	}
+
+	// Extract and link subjects from email content
+	s.extractAndLinkURLSubjects(createdCase.ID, email.Text)
+	s.extractAndLinkHashSubjects(createdCase.ID, email.Text)
+
+	s.logger.Info("Successfully processed new case",
+		zap.String("case_ref", createdCase.ReferenceNumber),
+		zap.Uint("case_id", createdCase.ID),
+		zap.String("source", string(createdCase.Source)))
+
+	return nil
 }
 
 // ProcessIncomingEmail processes an incoming email through the pipeline
@@ -501,7 +550,7 @@ func (s *EmailServiceDefault) formatMachineReadable(fields map[string]string) st
 }
 
 // extractAndCreateSubjects extracts and creates subjects from an ARF report
-func (s *EmailServiceDefault) extractAndCreateSubjects(ctx context.Context, caseID uint, report *email.ARFReport) {
+func (s *EmailServiceDefault) extractAndCreateSubjects(caseID uint, report *email.ARFReport) {
 	if s.subjectSvc == nil {
 		s.logger.Error("Subject service not available")
 		return
@@ -635,4 +684,78 @@ func (s *EmailServiceDefault) hashEmailContent(email *letters.Email) ([]byte, er
 
 	hash := sha256.Sum256(jsonData)
 	return hash[:], nil
+}
+
+// extractAndLinkURLSubjects extracts URLs from email content and links them to case
+func (s *EmailServiceDefault) extractAndLinkURLSubjects(caseID uint, emailContent string) {
+	if s.subjectSvc == nil {
+		s.logger.Error("Subject service not available")
+		return
+	}
+
+	// Create temporary email structure for content extraction
+	feedbackEmail := &letters.Email{
+		Text: emailContent,
+	}
+
+	// Extract URLs
+	contentExtractor := email.NewContentExtractor(s.logger)
+	urls := contentExtractor.ExtractURLs(feedbackEmail)
+	for _, url := range urls {
+		subject, err := s.subjectSvc.FindOrCreateByURL(url, models.SubjectTypeURL)
+		if err != nil {
+			s.logger.Error("Failed to create subject from URL",
+				zap.Error(err),
+				zap.String("url", url))
+			continue
+		}
+
+		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
+			s.logger.Error("Failed to link subject to case",
+				zap.Uint("case_id", caseID),
+				zap.Uint("subject_id", subject.ID),
+				zap.Error(err))
+		}
+	}
+}
+
+// extractAndLinkHashSubjects extracts hashes from email content and links them to case
+func (s *EmailServiceDefault) extractAndLinkHashSubjects(caseID uint, emailContent string) {
+	if s.subjectSvc == nil {
+		s.logger.Error("Subject service not available")
+		return
+	}
+
+	// Create temporary email structure for content extraction
+	feedbackEmail := &letters.Email{
+		Text: emailContent,
+	}
+
+	// Extract hashes
+	contentExtractor := email.NewContentExtractor(s.logger)
+	hashes := contentExtractor.ExtractHashes(feedbackEmail)
+	for _, hash := range hashes {
+		sHash, err := core.ParseStorageHash(hash)
+		if err != nil {
+			s.logger.Error("Failed to parse hash",
+				zap.Error(err),
+				zap.String("hash", hash))
+			continue
+		}
+
+		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash)
+		if err != nil {
+			s.logger.Error("Failed to create subject from hash",
+				zap.Error(err),
+				zap.String("hash", hash))
+			continue
+		}
+
+		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
+			s.logger.Error("Failed to link subject to case",
+				zap.Uint("case_id", caseID),
+				zap.Uint("subject_id", subject.ID),
+				zap.Error(err))
+		}
+	}
 }
