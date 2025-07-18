@@ -306,15 +306,20 @@ func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseMode
 		}
 	}
 
-	// Update case model with pipeline-generated data
-	caseModel.ReporterID = reporter.ID
-	caseModel.Type = s.determineCaseType(arfData.FeedbackType)
-	caseModel.Status = models.CaseStatusNew
-	caseModel.Source = models.ReportSourceEmail
-	caseModel.Description = arfData.FeedbackText
-	caseModel.Priority = s.determinePriority(arfData)
+	// Extract subjects first
+	urlSubjectIDs, err := s.extractAndLinkURLSubjects(arfData.FeedbackText)
+	if err != nil {
+		return fmt.Errorf("error extracting URL subjects: %w", err)
+	}
 
-	// Check if reporter is trusted
+	hashSubjectIDs, err := s.extractAndLinkHashSubjects(arfData.FeedbackText)
+	if err != nil {
+		return fmt.Errorf("error extracting hash subjects: %w", err)
+	}
+
+	allSubjectIDs := append(urlSubjectIDs, hashSubjectIDs...)
+
+	// Check reporter trust status once before the loop
 	isTrusted, err := s.reporterSvc.IsTrusted(reporter)
 	if err != nil {
 		s.logger.Error("Failed to check reporter trust status",
@@ -323,17 +328,27 @@ func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseMode
 		return fmt.Errorf("failed to check reporter trust status: %w", err)
 	}
 
-	// Only needs review if reporter is not trusted
-	caseModel.NeedsReview = !isTrusted
+	// Create cases for each subject
+	for _, subjectID := range allSubjectIDs {
+		// Create a new case model copy for each subject
+		caseCopy := *caseModel
+		caseCopy.ReporterID = reporter.ID
+		caseCopy.Type = s.determineCaseType(arfData.FeedbackType)
+		caseCopy.Status = models.CaseStatusNew
+		caseCopy.Source = models.ReportSourceEmail
+		caseCopy.Description = arfData.FeedbackText
+		caseCopy.Priority = s.determinePriority(arfData)
+		caseCopy.SubjectID = subjectID
+		caseCopy.NeedsReview = !isTrusted // Use pre-checked trust status
 
-	createdCase, err := s.caseSvc.Create(caseModel)
-	if err != nil {
-		s.logger.Error("Failed to create case", zap.Error(err))
-		return db.HandleDBError(err, "Create", "Case", 0)
-	}
+		createdCase, err := s.caseSvc.Create(&caseCopy)
+		if err != nil {
+			s.logger.Error("Failed to create case", zap.Error(err))
+			return db.HandleDBError(err, "Create", "Case", 0)
+		}
 
-	// Create communication record
-	arfDetails := fmt.Sprintf(`
+		// Create communication record
+		arfDetails := fmt.Sprintf(`
 ARF Report Details:
 -------------------
 Feedback Type: %s
@@ -351,71 +366,84 @@ Machine Readable Data:
 Feedback Text:
 %s
 `,
-		arfData.FeedbackType,
-		arfData.SourceIP,
-		arfData.UserAgent,
-		arfData.ArrivalDate,
-		arfData.OriginalFrom,
-		arfData.OriginalRecipient,
-		arfData.OriginalSubject,
-		s.formatMachineReadable(arfData.MachineReadable),
-		arfData.FeedbackText,
-	)
+			arfData.FeedbackType,
+			arfData.SourceIP,
+			arfData.UserAgent,
+			arfData.ArrivalDate,
+			arfData.OriginalFrom,
+			arfData.OriginalRecipient,
+			arfData.OriginalSubject,
+			s.formatMachineReadable(arfData.MachineReadable),
+			arfData.FeedbackText,
+		)
 
-	comm := &models.Communication{
-		CaseID:    createdCase.ID,
-		SenderID:  reporter.ID,
-		Type:      models.CommunicationTypeEmail,
-		Direction: models.CommunicationDirectionExternal,
-		Content:   arfDetails,
-		ThreadID:  fmt.Sprintf("ARF-REPORT-%d@system", createdCase.ID),
+		comm := &models.Communication{
+			CaseID:    createdCase.ID,
+			SenderID:  reporter.ID,
+			Type:      models.CommunicationTypeEmail,
+			Direction: models.CommunicationDirectionExternal,
+			Content:   arfDetails,
+			ThreadID:  fmt.Sprintf("ARF-REPORT-%d@system", createdCase.ID),
+		}
+
+		if _, err := s.commSvc.Create(comm); err != nil {
+			return db.HandleDBError(err, "handleThreadMatch", "Communication", 0)
+		}
+
+		s.logger.Info("Successfully processed ARF report",
+			zap.String("feedback_type", arfData.FeedbackType),
+			zap.String("case_ref", createdCase.ReferenceNumber),
+			zap.Uint("case_id", createdCase.ID))
 	}
-
-	if _, err := s.commSvc.Create(comm); err != nil {
-		return db.HandleDBError(err, "handleThreadMatch", "Communication", 0)
-	}
-
-	// Extract and link subjects from ARF report content
-	s.extractAndLinkURLSubjects(createdCase.ID, arfData.FeedbackText)
-	s.extractAndLinkHashSubjects(createdCase.ID, arfData.FeedbackText)
-
-	s.logger.Info("Successfully processed ARF report",
-		zap.String("feedback_type", arfData.FeedbackType),
-		zap.String("case_ref", createdCase.ReferenceNumber),
-		zap.Uint("case_id", createdCase.ID))
 
 	return nil
 }
 
 func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *letters.Email) error {
-	// Create the case
-	createdCase, err := s.caseSvc.Create(caseModel)
+	// Extract subjects first
+	urlSubjectIDs, err := s.extractAndLinkURLSubjects(email.Text)
 	if err != nil {
-		return fmt.Errorf("failed to create case: %w", err)
+		return fmt.Errorf("error extracting URL subjects: %w", err)
 	}
 
-	// Create communication record
-	comm := &models.Communication{
-		CaseID:    createdCase.ID,
-		SenderID:  caseModel.ReporterID,
-		Type:      models.CommunicationTypeEmail,
-		Direction: models.CommunicationDirectionExternal,
-		Content:   email.Text,
-		ThreadID:  string(email.Headers.MessageID),
+	hashSubjectIDs, err := s.extractAndLinkHashSubjects(email.Text)
+	if err != nil {
+		return fmt.Errorf("error extracting hash subjects: %w", err)
 	}
 
-	if _, err := s.commSvc.Create(comm); err != nil {
-		return fmt.Errorf("failed to create communication: %w", err)
+	allSubjectIDs := append(urlSubjectIDs, hashSubjectIDs...)
+
+	// Create cases for each subject
+	for _, subjectID := range allSubjectIDs {
+		// Create a new case model copy for each subject
+		caseCopy := *caseModel
+		caseCopy.SubjectID = subjectID
+
+		// Create the case
+		createdCase, err := s.caseSvc.Create(&caseCopy)
+		if err != nil {
+			return fmt.Errorf("failed to create case: %w", err)
+		}
+
+		// Create communication record
+		comm := &models.Communication{
+			CaseID:    createdCase.ID,
+			SenderID:  caseModel.ReporterID,
+			Type:      models.CommunicationTypeEmail,
+			Direction: models.CommunicationDirectionExternal,
+			Content:   email.Text,
+			ThreadID:  string(email.Headers.MessageID),
+		}
+
+		if _, err := s.commSvc.Create(comm); err != nil {
+			return fmt.Errorf("failed to create communication: %w", err)
+		}
+
+		s.logger.Info("Successfully processed new case",
+			zap.String("case_ref", createdCase.ReferenceNumber),
+			zap.Uint("case_id", createdCase.ID),
+			zap.String("source", string(createdCase.Source)))
 	}
-
-	// Extract and link subjects from email content
-	s.extractAndLinkURLSubjects(createdCase.ID, email.Text)
-	s.extractAndLinkHashSubjects(createdCase.ID, email.Text)
-
-	s.logger.Info("Successfully processed new case",
-		zap.String("case_ref", createdCase.ReferenceNumber),
-		zap.Uint("case_id", createdCase.ID),
-		zap.String("source", string(createdCase.Source)))
 
 	return nil
 }
@@ -549,65 +577,6 @@ func (s *EmailServiceDefault) formatMachineReadable(fields map[string]string) st
 	return result.String()
 }
 
-// extractAndCreateSubjects extracts and creates subjects from an ARF report
-func (s *EmailServiceDefault) extractAndCreateSubjects(caseID uint, report *email.ARFReport) {
-	if s.subjectSvc == nil {
-		s.logger.Error("Subject service not available")
-		return
-	}
-
-	// Create a temporary email structure for content extraction
-	feedbackEmail := &letters.Email{
-		Text: report.FeedbackText,
-	}
-
-	// Extract URLs from feedback text
-	contentExtractor := email.NewContentExtractor(s.logger)
-	urls := contentExtractor.ExtractURLs(feedbackEmail)
-	for _, url := range urls {
-		subject, err := s.subjectSvc.FindOrCreateByURL(url, models.SubjectTypeURL)
-		if err != nil {
-			s.logger.Error("Failed to create subject from URL in feedback text",
-				zap.Error(err),
-				zap.String("url", url))
-			continue
-		}
-
-		// Link subject to case
-		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
-			s.logger.Error("Failed to link subject to case",
-				zap.Uint("case_id", caseID),
-				zap.Uint("subject_id", subject.ID),
-				zap.Error(err))
-		}
-	}
-
-	// Extract hashes from feedback text
-	hashes := contentExtractor.ExtractHashes(feedbackEmail)
-	for _, hash := range hashes {
-		sHash, err := core.ParseStorageHash(hash)
-		if err != nil {
-			s.logger.Error("Failed to create storage hash hash in feedback text",
-				zap.Error(err),
-				zap.String("hash", hash))
-		}
-		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash)
-		if err != nil {
-			s.logger.Error("Failed to create subject from hash in feedback text",
-				zap.Error(err),
-				zap.String("hash", hash))
-			continue
-		}
-
-		// Link subject to case
-		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
-			s.logger.Error("Failed to link subject to case",
-				zap.Uint("case_id", caseID),
-				zap.Uint("subject_id", subject.ID),
-				zap.Error(err))
-		}
-	}
-}
 func (s *EmailServiceDefault) GenerateCaseThreadID(referenceNumber string) string {
 	domain := s.ctx.Config().Config().Core.Domain
 	return fmt.Sprintf("<case.%s.%s@%s>", referenceNumber, s.ctx.Config().Config().Core.PortalName, domain)
@@ -687,10 +656,10 @@ func (s *EmailServiceDefault) hashEmailContent(email *letters.Email) ([]byte, er
 }
 
 // extractAndLinkURLSubjects extracts URLs from email content and links them to case
-func (s *EmailServiceDefault) extractAndLinkURLSubjects(caseID uint, emailContent string) {
+func (s *EmailServiceDefault) extractAndLinkURLSubjects(emailContent string) ([]uint, error) {
 	if s.subjectSvc == nil {
 		s.logger.Error("Subject service not available")
-		return
+		return nil, fmt.Errorf("subject service not available")
 	}
 
 	// Create temporary email structure for content extraction
@@ -701,29 +670,28 @@ func (s *EmailServiceDefault) extractAndLinkURLSubjects(caseID uint, emailConten
 	// Extract URLs
 	contentExtractor := email.NewContentExtractor(s.logger)
 	urls := contentExtractor.ExtractURLs(feedbackEmail)
+
+	subjectIDs := make([]uint, 0, len(urls)) // Pre-allocate slice
+
 	for _, url := range urls {
 		subject, err := s.subjectSvc.FindOrCreateByURL(url, models.SubjectTypeURL)
 		if err != nil {
 			s.logger.Error("Failed to create subject from URL",
 				zap.Error(err),
 				zap.String("url", url))
-			continue
+			return nil, fmt.Errorf("failed to create subject from URL: %w", err)
 		}
-
-		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
-			s.logger.Error("Failed to link subject to case",
-				zap.Uint("case_id", caseID),
-				zap.Uint("subject_id", subject.ID),
-				zap.Error(err))
-		}
+		subjectIDs = append(subjectIDs, subject.ID)
 	}
+
+	return subjectIDs, nil
 }
 
 // extractAndLinkHashSubjects extracts hashes from email content and links them to case
-func (s *EmailServiceDefault) extractAndLinkHashSubjects(caseID uint, emailContent string) {
+func (s *EmailServiceDefault) extractAndLinkHashSubjects(emailContent string) ([]uint, error) {
 	if s.subjectSvc == nil {
 		s.logger.Error("Subject service not available")
-		return
+		return nil, fmt.Errorf("subject service not available")
 	}
 
 	// Create temporary email structure for content extraction
@@ -734,13 +702,16 @@ func (s *EmailServiceDefault) extractAndLinkHashSubjects(caseID uint, emailConte
 	// Extract hashes
 	contentExtractor := email.NewContentExtractor(s.logger)
 	hashes := contentExtractor.ExtractHashes(feedbackEmail)
+
+	subjectIDs := make([]uint, 0, len(hashes)) // Pre-allocate slice
+
 	for _, hash := range hashes {
 		sHash, err := core.ParseStorageHash(hash)
 		if err != nil {
 			s.logger.Error("Failed to parse hash",
 				zap.Error(err),
 				zap.String("hash", hash))
-			continue
+			return nil, fmt.Errorf("failed to parse hash: %w", err)
 		}
 
 		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash)
@@ -748,14 +719,10 @@ func (s *EmailServiceDefault) extractAndLinkHashSubjects(caseID uint, emailConte
 			s.logger.Error("Failed to create subject from hash",
 				zap.Error(err),
 				zap.String("hash", hash))
-			continue
+			return nil, fmt.Errorf("failed to create subject from hash: %w", err)
 		}
-
-		if err := s.caseSvc.LinkSubject(caseID, subject.ID); err != nil {
-			s.logger.Error("Failed to link subject to case",
-				zap.Uint("case_id", caseID),
-				zap.Uint("subject_id", subject.ID),
-				zap.Error(err))
-		}
+		subjectIDs = append(subjectIDs, subject.ID)
 	}
+
+	return subjectIDs, nil
 }

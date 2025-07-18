@@ -769,63 +769,6 @@ func (_c *MockCaseService_ID_Call) RunAndReturn(run func() string) *MockCaseServ
 	return _c
 }
 
-// LinkSubject provides a mock function for the type MockCaseService
-func (_mock *MockCaseService) LinkSubject(caseID uint, subjectID uint) error {
-	ret := _mock.Called(caseID, subjectID)
-
-	if len(ret) == 0 {
-		panic("no return value specified for LinkSubject")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(uint, uint) error); ok {
-		r0 = returnFunc(caseID, subjectID)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockCaseService_LinkSubject_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LinkSubject'
-type MockCaseService_LinkSubject_Call struct {
-	*mock.Call
-}
-
-// LinkSubject is a helper method to define mock.On call
-//   - caseID uint
-//   - subjectID uint
-func (_e *MockCaseService_Expecter) LinkSubject(caseID interface{}, subjectID interface{}) *MockCaseService_LinkSubject_Call {
-	return &MockCaseService_LinkSubject_Call{Call: _e.mock.On("LinkSubject", caseID, subjectID)}
-}
-
-func (_c *MockCaseService_LinkSubject_Call) Run(run func(caseID uint, subjectID uint)) *MockCaseService_LinkSubject_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 uint
-		if args[0] != nil {
-			arg0 = args[0].(uint)
-		}
-		var arg1 uint
-		if args[1] != nil {
-			arg1 = args[1].(uint)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockCaseService_LinkSubject_Call) Return(err error) *MockCaseService_LinkSubject_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockCaseService_LinkSubject_Call) RunAndReturn(run func(caseID uint, subjectID uint) error) *MockCaseService_LinkSubject_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // List provides a mock function for the type MockCaseService
 func (_mock *MockCaseService) List(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models.Case, int64, error) {
 	ret := _mock.Called(filters, sorts, pagination)

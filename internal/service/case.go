@@ -194,31 +194,6 @@ func (s *CaseServiceDefault) SendCreationNotification(caseID uint) error {
 	return nil
 }
 
-// LinkSubject associates a subject with a case
-func (s *CaseServiceDefault) LinkSubject(caseID, subjectID uint) error {
-	_, err := s.GetByID(caseID)
-	if err != nil {
-		return fmt.Errorf("failed to get case: %w", err)
-	}
-
-	// Create association through CaseScan model
-	scan := &models.CaseScan{
-		CaseID:    caseID,
-		SubjectID: subjectID,
-		Status:    models.ScanStatusPending,
-	}
-
-	if err := db.Create(context.Background(), s.ctx, s.db, scan); err != nil {
-		s.logger.Error("Failed to link subject to case",
-			zap.Uint("case_id", caseID),
-			zap.Uint("subject_id", subjectID),
-			zap.Error(err))
-		return fmt.Errorf("failed to link subject: %w", err)
-	}
-
-	return nil
-}
-
 // SendStatusUpdateNotification sends an email notification when a case status is updated
 func (s *CaseServiceDefault) SendStatusUpdateNotification(caseID uint, oldStatus, newStatus models.CaseStatus) error {
 	// Get the case

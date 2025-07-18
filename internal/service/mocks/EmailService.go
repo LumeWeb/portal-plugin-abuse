@@ -250,6 +250,57 @@ func (_c *MockEmailService_IsEmailProcessed_Call) RunAndReturn(run func(email *l
 	return _c
 }
 
+// MarkEmailProcessed provides a mock function for the type MockEmailService
+func (_mock *MockEmailService) MarkEmailProcessed(email *letters.Email) error {
+	ret := _mock.Called(email)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkEmailProcessed")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(*letters.Email) error); ok {
+		r0 = returnFunc(email)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockEmailService_MarkEmailProcessed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEmailProcessed'
+type MockEmailService_MarkEmailProcessed_Call struct {
+	*mock.Call
+}
+
+// MarkEmailProcessed is a helper method to define mock.On call
+//   - email *letters.Email
+func (_e *MockEmailService_Expecter) MarkEmailProcessed(email interface{}) *MockEmailService_MarkEmailProcessed_Call {
+	return &MockEmailService_MarkEmailProcessed_Call{Call: _e.mock.On("MarkEmailProcessed", email)}
+}
+
+func (_c *MockEmailService_MarkEmailProcessed_Call) Run(run func(email *letters.Email)) *MockEmailService_MarkEmailProcessed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *letters.Email
+		if args[0] != nil {
+			arg0 = args[0].(*letters.Email)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockEmailService_MarkEmailProcessed_Call) Return(err error) *MockEmailService_MarkEmailProcessed_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockEmailService_MarkEmailProcessed_Call) RunAndReturn(run func(email *letters.Email) error) *MockEmailService_MarkEmailProcessed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ProcessIncomingEmail provides a mock function for the type MockEmailService
 func (_mock *MockEmailService) ProcessIncomingEmail(ctx context.Context, rawEmail io.Reader) error {
 	ret := _mock.Called(ctx, rawEmail)
