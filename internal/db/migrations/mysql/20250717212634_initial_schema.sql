@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS abuse_cases (
     source ENUM('web_form', 'email', 'api') NOT NULL,
     is_duplicate BOOLEAN DEFAULT FALSE,
     needs_review BOOLEAN DEFAULT FALSE,
-    content_hash VARCHAR(255) NOT NULL,
     classification_scores JSON,
     risk_factors JSON,
     reporter_id INT NOT NULL,

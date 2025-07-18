@@ -52,7 +52,6 @@ create table if not exists abuse_cases (
     source TEXT check (source in ('web_form', 'email', 'api')) not null,
     is_duplicate BOOLEAN default FALSE,
     needs_review BOOLEAN default FALSE,
-    content_hash TEXT not null,
     classification_scores TEXT,
     risk_factors TEXT,
     reporter_id INTEGER not null,

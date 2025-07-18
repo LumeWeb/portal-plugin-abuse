@@ -69,10 +69,6 @@ type Case struct {
 
 	// Review flag
 	NeedsReview bool
-
-	// Content hash for tracking
-	ContentHash string
-
 	// Classification metadata - stored as JSON
 	ClassificationScores datatypes.JSON `gorm:"type:json"`
 	RiskFactors          datatypes.JSON `gorm:"type:json"`
