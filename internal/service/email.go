@@ -119,8 +119,8 @@ func (s *EmailServiceDefault) getOrCreateReporter(email string, name string) (*m
 		return reporter, nil
 	}
 
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		s.logger.Error("Failed to get reporter by email", 
+	if !errors.Is(err, db.ErrRecordNotFound) {
+		s.logger.Error("Failed to get reporter by email",
 			zap.Error(err),
 			zap.String("email", email))
 		return nil, db.HandleDBError(err, "GetByEmail", "Reporter", 0)

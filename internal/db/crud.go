@@ -17,7 +17,7 @@ import (
 
 // Database error types
 var (
-	ErrRecordNotFound      = errors.New("record not found")
+	ErrRecordNotFound      = gorm.ErrRecordNotFound
 	ErrDuplicateEntry      = errors.New("duplicate entry")
 	ErrConstraintViolation = errors.New("constraint violation")
 	ErrTransactionFailed   = errors.New("transaction failed")
