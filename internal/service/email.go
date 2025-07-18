@@ -252,16 +252,33 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 		return err
 	}
 
+	var processErr error
 	switch {
 	case result.IsARF:
-		return s.handleARFReport(result.ARFData, result.Case)
+		processErr = s.handleARFReport(result.ARFData, result.Case)
 	case result.Case != nil:
-		return s.handleNewCase(result.Case, result.Email)
+		processErr = s.handleNewCase(result.Case, result.Email)
 	case result.ThreadMatch != nil:
-		return s.handleThreadMatch(ctx, result.ThreadMatch, data)
+		processErr = s.handleThreadMatch(ctx, result.ThreadMatch, data)
 	default:
-		return fmt.Errorf("unknown email processing result type")
+		processErr = fmt.Errorf("unknown email processing result type")
 	}
+
+	// Mark email as processed if we got a result with an email
+	if result != nil && result.Email != nil {
+		if markErr := s.MarkEmailProcessed(result.Email); markErr != nil {
+			s.logger.Error("Failed to mark email as processed",
+				zap.String("message_id", string(result.Email.Headers.MessageID)),
+				zap.Error(markErr))
+			// Combine errors if both processing and marking failed
+			if processErr != nil {
+				return fmt.Errorf("processing error: %v, marking error: %w", processErr, markErr)
+			}
+			return markErr
+		}
+	}
+
+	return processErr
 }
 
 func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseModel *models.Case) error {
