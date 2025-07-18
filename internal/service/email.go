@@ -92,16 +92,26 @@ func (s *EmailServiceDefault) determinePriority(arfData *email.ARFReport) models
 	return models.CasePriorityMedium
 }
 
-func (s *EmailServiceDefault) getOrCreateReporter(email string, name ...string) (*models.Reporter, error) {
+func (s *EmailServiceDefault) getOrCreateReporter(email string, name string) (*models.Reporter, error) {
 	if s.reporterSvc == nil {
 		return nil, fmt.Errorf("reporter service not available")
 	}
 
+	// Use default values if no email provided
+	if email == "" {
+		email = defaultARFReporterEmail
+		name = defaultARFReporterName
+		s.logger.Info("Using default reporter values",
+			zap.String("email", email),
+			zap.String("name", name))
+	}
+
+	// Try to get existing reporter
 	reporter, err := s.reporterSvc.GetByEmail(email)
 	if err == nil {
 		// Update name if we have one and reporter doesn't
-		if len(name) > 0 && name[0] != "" && reporter.Name == "" {
-			reporter.Name = name[0]
+		if name != "" && reporter.Name == "" {
+			reporter.Name = name
 			if err = s.reporterSvc.Update(reporter); err != nil {
 				return nil, err
 			}
@@ -110,14 +120,33 @@ func (s *EmailServiceDefault) getOrCreateReporter(email string, name ...string) 
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		s.logger.Error("Failed to get reporter by email", 
+			zap.Error(err),
+			zap.String("email", email))
+		return nil, db.HandleDBError(err, "GetByEmail", "Reporter", 0)
 	}
 
 	// Create new reporter
-	return s.reporterSvc.Create(&models.Reporter{
+	reporter = &models.Reporter{
 		Email: email,
-		Name:  lo.Ternary(len(name) > 0 && name[0] != "", name[0], email),
-	})
+		Name:  lo.Ternary(name != "", name, email),
+	}
+
+	reporter, err = s.reporterSvc.Create(reporter)
+	if err != nil {
+		s.logger.Error("Failed to create reporter",
+			zap.Error(err),
+			zap.String("email", email),
+			zap.String("name", name))
+		return nil, db.HandleDBError(err, "Create", "Reporter", 0)
+	}
+
+	s.logger.Info("Created new reporter",
+		zap.Uint("reporter_id", reporter.ID),
+		zap.String("email", reporter.Email),
+		zap.String("name", reporter.Name))
+
+	return reporter, nil
 }
 
 // Ensure EmailServiceDefault implements the interface
@@ -248,62 +277,10 @@ func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseMode
 		return fmt.Errorf("reporter service not available")
 	}
 
-	// Create or get reporter based on email address
-	var reporter *models.Reporter
-	var err error
-	if arfData.ReporterEmail != "" {
-		reporter, err = s.reporterSvc.GetByEmail(arfData.ReporterEmail)
-		if err != nil && !db.IsRecordNotFound(err) {
-			s.logger.Error("Failed to get reporter by email", zap.Error(err))
-			return db.HandleDBError(err, "GetByEmail", "Reporter", 0)
-		}
-
-		// If not found, create a new reporter
-		if reporter == nil || db.IsRecordNotFound(err) {
-			reporter = &models.Reporter{
-				Email: arfData.ReporterEmail,
-				Name:  arfData.ReporterEmail,
-			}
-			reporter, err = s.reporterSvc.Create(reporter)
-			if err != nil {
-				s.logger.Error("Failed to create reporter", zap.Error(err))
-				return db.HandleDBError(err, "Create", "Reporter", 0)
-			}
-		}
-	} else {
-		// For ARF reports without reporter email, use generic
-		s.logger.Info("Using default reporter values",
-			zap.String("email", defaultARFReporterEmail),
-			zap.String("name", defaultARFReporterName))
-
-		reporter, err = s.reporterSvc.GetByEmail(defaultARFReporterEmail)
-		if err != nil && !db.IsRecordNotFound(err) {
-			s.logger.Error("Failed to get generic reporter",
-				zap.Error(err),
-				zap.String("email", defaultARFReporterEmail))
-			return fmt.Errorf("failed to get generic reporter: %w", err)
-		}
-
-		// If not found, create generic reporter
-		if reporter == nil || db.IsRecordNotFound(err) {
-			reporter = &models.Reporter{
-				Email: defaultARFReporterEmail,
-				Name:  defaultARFReporterName,
-			}
-			reporter, err = s.reporterSvc.Create(reporter)
-			if err != nil {
-				s.logger.Error("Failed to create generic reporter",
-					zap.Error(err),
-					zap.String("email", defaultARFReporterEmail),
-					zap.String("name", defaultARFReporterName))
-				return db.HandleDBError(err, "Create", "Reporter", 0)
-			}
-
-			s.logger.Info("Created new generic reporter",
-				zap.Uint("reporter_id", reporter.ID),
-				zap.String("email", reporter.Email),
-				zap.String("name", reporter.Name))
-		}
+	// Get or create reporter
+	reporter, err := s.getOrCreateReporter(arfData.ReporterEmail, "")
+	if err != nil {
+		return err
 	}
 
 	// Extract subjects first
@@ -400,6 +377,22 @@ Feedback Text:
 }
 
 func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *letters.Email) error {
+	// Get or create reporter from email headers
+	var reporter *models.Reporter
+	var err error
+	if len(email.Headers.From) > 0 {
+		reporter, err = s.getOrCreateReporter(email.Headers.From[0].Address, email.Headers.From[0].Name)
+		if err != nil {
+			return fmt.Errorf("failed to get/create reporter: %w", err)
+		}
+	} else {
+		// Fallback to default reporter if no From header
+		reporter, err = s.getOrCreateReporter("", "")
+		if err != nil {
+			return fmt.Errorf("failed to get default reporter: %w", err)
+		}
+	}
+
 	// Extract subjects first
 	urlSubjectIDs, err := s.extractAndLinkURLSubjects(email.Text)
 	if err != nil {
@@ -418,6 +411,7 @@ func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *lette
 		// Create a new case model copy for each subject
 		caseCopy := *caseModel
 		caseCopy.SubjectID = subjectID
+		caseCopy.ReporterID = reporter.ID
 
 		// Create the case
 		createdCase, err := s.caseSvc.Create(&caseCopy)
@@ -428,7 +422,7 @@ func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *lette
 		// Create communication record
 		comm := &models.Communication{
 			CaseID:    createdCase.ID,
-			SenderID:  caseModel.ReporterID,
+			SenderID:  reporter.ID,
 			Type:      models.CommunicationTypeEmail,
 			Direction: models.CommunicationDirectionExternal,
 			Content:   email.Text,
@@ -442,7 +436,8 @@ func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *lette
 		s.logger.Info("Successfully processed new case",
 			zap.String("case_ref", createdCase.ReferenceNumber),
 			zap.Uint("case_id", createdCase.ID),
-			zap.String("source", string(createdCase.Source)))
+			zap.String("source", string(createdCase.Source)),
+			zap.Uint("reporter_id", reporter.ID))
 	}
 
 	return nil
