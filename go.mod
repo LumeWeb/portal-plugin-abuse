@@ -30,9 +30,9 @@ require (
 	go.lumeweb.com/portal-middleware v0.2.9
 	go.lumeweb.com/portal-router v0.6.1
 	go.lumeweb.com/queryutil v0.3.12
-	go.lumeweb.com/web/go/portal-abuse-report v0.0.0-20250719081532-ec73ad6c7609
-	go.lumeweb.com/web/go/portal-plugin-abuse v0.0.0-20250719081532-ec73ad6c7609
-	go.lumeweb.com/web/go/portal-plugin-abuse-report v0.0.0-20250719081532-ec73ad6c7609
+	go.lumeweb.com/web/go/portal-abuse-report v0.0.0-20250719082727-fb92c4a3f685
+	go.lumeweb.com/web/go/portal-plugin-abuse v0.0.0-20250719082727-fb92c4a3f685
+	go.lumeweb.com/web/go/portal-plugin-abuse-report v0.0.0-20250719082727-fb92c4a3f685
 	go.sia.tech/coreutils v0.16.4
 	go.uber.org/zap v1.27.0
 	gorm.io/datatypes v1.2.6
