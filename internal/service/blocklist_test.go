@@ -497,6 +497,79 @@ func TestBlockListService_GetBlocklistMetrics(t *testing.T) {
 	}, coreTesting.WithService(typesSvc.BLOCKLIST_SERVICE, NewBlockListService))
 }
 
+func TestBlockListService_IsSubjectBlocked_Blocked(t *testing.T) {
+	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		blockListService := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, blockListService)
+
+		// Create a test subject
+		subject := &models.Subject{
+			Identifier: []byte("testhash"),
+			Type:       models.SubjectTypeHash,
+		}
+		err := ctx.DB().Create(subject).Error
+		require.NoError(tb, err)
+
+		// Create a blocked content entry referencing the subject
+		blockedContent := &models.BlockList{
+			Hash:      []byte("testhash"),
+			Reason:    models.BlockReasonSpam,
+			Severity:  models.BlockSeverityHigh,
+			Action:    models.BlockActionReject,
+			BlockedBy: 1,
+			Source:    models.BlockSourceAdmin,
+		}
+		err = ctx.DB().Create(blockedContent).Error
+		require.NoError(tb, err)
+
+		// Act
+		isBlocked, err := blockListService.IsSubjectBlocked(subject.ID)
+
+		// Assert
+		assert.NoError(tb, err)
+		assert.True(tb, isBlocked)
+	}, coreTesting.WithService(typesSvc.BLOCKLIST_SERVICE, NewBlockListService))
+}
+
+func TestBlockListService_IsSubjectBlocked_NotBlocked(t *testing.T) {
+	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		blockListService := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, blockListService)
+
+		// Create a test subject
+		subject := &models.Subject{
+			Identifier: []byte("test-subject"),
+			Type:       models.SubjectTypeHash,
+		}
+		err := ctx.DB().Create(subject).Error
+		require.NoError(tb, err)
+
+		// Act
+		isBlocked, err := blockListService.IsSubjectBlocked(subject.ID)
+
+		// Assert
+		assert.NoError(tb, err)
+		assert.False(tb, isBlocked)
+	}, coreTesting.WithService(typesSvc.BLOCKLIST_SERVICE, NewBlockListService))
+}
+
+func TestBlockListService_IsSubjectBlocked_InvalidSubject(t *testing.T) {
+	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		blockListService := core.GetService[typesSvc.BlockListService](ctx, typesSvc.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, blockListService)
+
+		// Act
+		isBlocked, err := blockListService.IsSubjectBlocked(999999) // Non-existent subject ID
+
+		// Assert
+		assert.NoError(tb, err)
+		assert.False(tb, isBlocked)
+	}, coreTesting.WithService(typesSvc.BLOCKLIST_SERVICE, NewBlockListService))
+}
+
 func TestBlockListService_BatchBlockFromScanResults(t *testing.T) {
 	coreTesting.RunTestCaseWithDB(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		// Arrange

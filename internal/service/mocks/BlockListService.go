@@ -554,6 +554,66 @@ func (_c *MockBlockListService_IsBlocked_Call) RunAndReturn(run func(hash core.S
 	return _c
 }
 
+// IsSubjectBlocked provides a mock function for the type MockBlockListService
+func (_mock *MockBlockListService) IsSubjectBlocked(subjectID uint) (bool, error) {
+	ret := _mock.Called(subjectID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsSubjectBlocked")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint) (bool, error)); ok {
+		return returnFunc(subjectID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint) bool); ok {
+		r0 = returnFunc(subjectID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint) error); ok {
+		r1 = returnFunc(subjectID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlockListService_IsSubjectBlocked_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsSubjectBlocked'
+type MockBlockListService_IsSubjectBlocked_Call struct {
+	*mock.Call
+}
+
+// IsSubjectBlocked is a helper method to define mock.On call
+//   - subjectID uint
+func (_e *MockBlockListService_Expecter) IsSubjectBlocked(subjectID interface{}) *MockBlockListService_IsSubjectBlocked_Call {
+	return &MockBlockListService_IsSubjectBlocked_Call{Call: _e.mock.On("IsSubjectBlocked", subjectID)}
+}
+
+func (_c *MockBlockListService_IsSubjectBlocked_Call) Run(run func(subjectID uint)) *MockBlockListService_IsSubjectBlocked_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint
+		if args[0] != nil {
+			arg0 = args[0].(uint)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlockListService_IsSubjectBlocked_Call) Return(b bool, err error) *MockBlockListService_IsSubjectBlocked_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MockBlockListService_IsSubjectBlocked_Call) RunAndReturn(run func(subjectID uint) (bool, error)) *MockBlockListService_IsSubjectBlocked_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListBlockedContent provides a mock function for the type MockBlockListService
 func (_mock *MockBlockListService) ListBlockedContent(filters []queryutil.CrudFilter, sorts []queryutil.Sort, pagination queryutil.Pagination) ([]models0.BlockList, int64, error) {
 	ret := _mock.Called(filters, sorts, pagination)

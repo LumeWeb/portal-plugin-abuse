@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -173,6 +174,59 @@ func TestListBlocks_Success(t *testing.T) {
 		assert.NoError(tb, err)
 		assert.Len(tb, response.Data, 2)
 		assert.Equal(tb, models.BlockReasonMalware, response.Data[0].Reason)
+	})
+}
+
+func TestCheckSubjectBlocked_Success(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
+
+		mockBlocklistSvc.EXPECT().IsSubjectBlocked(uint(123)).Return(true, nil).Once()
+
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/abuse/blocklist/subjects/123/blocked", nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
+
+		// Assert
+		assert.Equal(tb, http.StatusOK, w.Code)
+
+		var response dto.SubjectBlockedResponse
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(tb, err)
+		assert.True(tb, response.Blocked)
+	})
+}
+
+func TestCheckSubjectBlocked_InvalidID(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/abuse/blocklist/subjects/invalid/blocked", nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
+
+		// Assert
+		assert.Equal(tb, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestCheckSubjectBlocked_ServiceError(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Arrange
+		mockBlocklistSvc := core.GetService[*mocks.MockBlockListService](ctx, service.BLOCKLIST_SERVICE)
+		assert.NotNil(tb, mockBlocklistSvc)
+
+		mockBlocklistSvc.EXPECT().IsSubjectBlocked(uint(123)).Return(false, errors.New("service error")).Once()
+
+		// Act
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/abuse/blocklist/subjects/123/blocked", nil)
+		w := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(w, req)
+
+		// Assert
+		assert.Equal(tb, http.StatusInternalServerError, w.Code)
 	})
 }
 

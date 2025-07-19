@@ -47,6 +47,9 @@ type BlockListService interface {
 
 	// GetBlockReasonCounts retrieves block reason counts within a time range.
 	GetBlockReasonCounts(filters []queryutil.CrudFilter) ([]BlockReasonCount, error)
+
+	// IsSubjectBlocked checks if a subject ID is blocked
+	IsSubjectBlocked(subjectID uint) (bool, error)
 }
 
 // BlockReasonCount represents a single block reason count.
