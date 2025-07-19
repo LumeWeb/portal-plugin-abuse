@@ -341,7 +341,6 @@ CREATE TABLE IF NOT EXISTS abuse_processed_emails (
     deleted_at DATETIME,
     message_id VARCHAR(255),
     hash VARBINARY(32) NOT NULL, -- SHA-256 hash (32 bytes)
-    processed_at DATETIME NOT NULL,
     error BOOLEAN DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_abuse_processed_emails_hash

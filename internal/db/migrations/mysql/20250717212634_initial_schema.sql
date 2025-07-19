@@ -184,7 +184,6 @@ CREATE TABLE IF NOT EXISTS abuse_processed_emails (
     deleted_at DATETIME(6),
     message_id VARCHAR(255),
     hash VARBINARY(32) NOT NULL, -- SHA-256 hash (32 bytes)
-    processed_at DATETIME(6) NOT NULL,
     error BOOLEAN DEFAULT FALSE
 ) ENGINE = InnoDB;
 CREATE INDEX idx_abuse_processed_emails_hash

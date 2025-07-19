@@ -1,12 +1,14 @@
 package models
 
-import "time"
+import (
+	"gorm.io/gorm"
+)
 
 type ProcessedEmail struct {
-	MessageID   string // Message-ID (if available)
-	Hash        []byte // SHA256 hash of the raw email (fallback)
-	ProcessedAt time.Time
-	Error       bool
+	gorm.Model
+	MessageID string // Message-ID (if available)
+	Hash      []byte // SHA256 hash of the raw email (fallback)
+	Error     bool
 }
 
 func (ProcessedEmail) TableName() string {
