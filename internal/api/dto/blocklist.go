@@ -16,6 +16,7 @@ var _ httputil.DTOValidator = (*BlockContentUpdateRequest)(nil)
 var _ httputil.DTORequest[*models.BlockList] = (*BlockContentCreateRequest)(nil)
 var _ httputil.DTORequest[*models.BlockList] = (*BlockContentUpdateRequest)(nil)
 var _ httputil.DTOResponse[*models.BlockList] = (*BlockContentResponse)(nil)
+var _ httputil.DTOResponse[bool] = (*SubjectBlockedResponse)(nil)
 
 // BlockContentCreateRequest represents the request body for blocking content.
 type BlockContentCreateRequest struct {
@@ -272,4 +273,15 @@ type BlockListFilter struct {
 	Action   string `json:"action,omitempty"`
 	Source   string `json:"source,omitempty"`
 	CaseID   *uint  `json:"case_id,omitempty"`
+}
+
+// SubjectBlockedResponse represents the response for checking if a subject is blocked.
+type SubjectBlockedResponse struct {
+	Blocked bool `json:"blocked"`
+}
+
+func (s *SubjectBlockedResponse) FromModel(model bool) error {
+	s.Blocked = model
+
+	return nil
 }

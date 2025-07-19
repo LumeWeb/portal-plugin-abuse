@@ -157,6 +157,16 @@ func WithDBSelect(selectClause string) DBOption {
 	}
 }
 
+// WithDBJoin adds JOIN clauses to the query
+// joinType can be "JOIN", "LEFT JOIN", "RIGHT JOIN", etc.
+// table is the table to join
+// condition is the ON clause condition
+func WithDBJoin(joinType string, table string, condition string) DBOption {
+	return func(_db *gorm.DB) *gorm.DB {
+		return _db.Joins(fmt.Sprintf("%s %s ON %s", joinType, table, condition))
+	}
+}
+
 func ExecuteTransaction(ctx context.Context, coreCtx core.Context, _db *gorm.DB, operation string, txFunc TransactionFunc, fields ...zap.Field) error {
 	logger := coreCtx.Logger()
 
@@ -413,7 +423,7 @@ func ListIncludingSoftDeleted[T any](ctx context.Context, coreCtx core.Context, 
 // BulkCreate creates multiple records in the database.
 func BulkCreate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, records []T, options ...DBOption) error {
 	return ExecuteTransaction(ctx, coreCtx, _db, "BulkCreate", func(tx *gorm.DB) error {
-		_db = applyDbOptions(_db, options)
+		tx = applyDbOptions(tx, options)
 		return tx.CreateInBatches(records, 100).Error // Batch size of 100
 	})
 }
@@ -422,7 +432,7 @@ func BulkCreate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, 
 func BulkUpdate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, records []T, fields []string, options ...DBOption) error {
 	_db = applyDbOptions(_db, options)
 	return ExecuteTransaction(ctx, coreCtx, _db, "BulkUpdate", func(tx *gorm.DB) error {
-		_db = applyDbOptions(_db, options)
+		tx = applyDbOptions(tx, options)
 		return tx.Select(fields).Updates(records).Error
 	})
 }
@@ -431,7 +441,7 @@ func BulkUpdate[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, 
 func Count[T any](ctx context.Context, coreCtx core.Context, _db *gorm.DB, filters []queryutil.CrudFilter, options ...DBOption) (int64, error) {
 	var count int64
 	err := ExecuteTransaction(ctx, coreCtx, _db, "Count", func(tx *gorm.DB) error {
-		_db = applyDbOptions(_db, options)
+		tx = applyDbOptions(tx, options)
 		tx = queryutil.ApplyFilters(tx, filters, nil)
 		return tx.Model(new(T)).Count(&count).Error
 	})

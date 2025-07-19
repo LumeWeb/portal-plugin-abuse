@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"net/http"
+	"strconv"
 )
 
 // registerBlockListHandlers registers the block list related route handlers using portal-router.
@@ -84,6 +85,28 @@ func (e *AdminExtension) registerBlockListHandlers(gRouter router.Router, access
 					router.DefineSwaggerErrorResponses(
 						router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid hash format"),
 						router.DefineSwaggerErrorResponse(http.StatusNotFound, "Blocked content not found"),
+					),
+				),
+			),
+		),
+
+		// Check if subject is blocked
+		router.NewRoute(http.MethodGet, "/blocklist/subjects/:subject_id/blocked", e.checkSubjectBlocked,
+			router.WithAccess(core.ACCESS_ADMIN_ROLE),
+			router.WithSwagger(
+				router.WithSummary("Check subject blocked status"),
+				router.WithDescription("Check if a subject ID is blocked"),
+				router.WithTags("Blocklist"),
+				router.WithPathParam("subject_id", "ID of the subject to check", "123"),
+				router.WithSuccessResponse(
+					http.StatusOK,
+					"Subject blocked status",
+					router.WithJSONContent(dto.SubjectBlockedResponse{}),
+				),
+				router.WithErrorResponses(
+					router.DefineSwaggerErrorResponses(
+						router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid subject_id format"),
+						router.DefineSwaggerErrorResponse(http.StatusInternalServerError, "Failed to check block status"),
 					),
 				),
 			),
@@ -227,6 +250,36 @@ func (e *AdminExtension) getBlockedContent(c echo.Context) error { // Changed si
 	}
 
 	return nil // Return nil on success
+}
+
+// checkSubjectBlocked checks if a subject ID is blocked
+func (e *AdminExtension) checkSubjectBlocked(c echo.Context) error {
+	ctx := httputil.Context(c)
+
+	if e.blockListService == nil {
+		e.logger.Error("Blocklist service not available")
+		return ctx.Error(errors.New("service unavailable"), http.StatusInternalServerError)
+	}
+
+	subjectIDStr := c.Param("subject_id")
+	subjectID, err := strconv.ParseUint(subjectIDStr, 10, 32)
+	if err != nil {
+		return ctx.Error(fmt.Errorf("invalid subject_id format"), http.StatusBadRequest)
+	}
+
+	isBlocked, err := e.blockListService.IsSubjectBlocked(uint(subjectID))
+	if err != nil {
+		e.logger.Error("Failed to check subject block status", zap.Error(err))
+		return ctx.Error(fmt.Errorf("failed to check block status"), http.StatusInternalServerError)
+	}
+
+	var responseDto dto.SubjectBlockedResponse
+
+	if err := httputil.EncodeResponse[bool, *dto.SubjectBlockedResponse](ctx, isBlocked, &responseDto); err != nil { // Use httputil.EncodeResponse
+		e.logger.Error("Failed to encode response", zap.Error(err))
+		return err // httputil.EncodeResponse returns an error
+	}
+	return nil
 }
 
 // unblockContent handles DELETE requests to remove content from the block list

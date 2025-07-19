@@ -222,6 +222,26 @@ func (s *BlockListServiceDefault) BatchBlockFromScanResults(ctx context.Context,
 	return blockedCount, nil
 }
 
+// IsSubjectBlocked checks if a subject ID is blocked
+func (s *BlockListServiceDefault) IsSubjectBlocked(subjectID uint) (bool, error) {
+	if subjectID == 0 {
+		return false, fmt.Errorf("invalid subjectID: cannot be zero")
+	}
+
+	count, err := db.Count[models.BlockList](context.Background(), s.ctx, s.db,
+		queryutil.Filters(queryutil.FieldEqual("abuse_subjects.id", subjectID)),
+		db.WithDBJoin("JOIN", "abuse_subjects", "abuse_blocklist.hash = abuse_subjects.identifier"))
+
+	if err != nil {
+		s.logger.Error("Failed to check subject block status",
+			zap.Error(err),
+			zap.Uint("subjectID", subjectID))
+		return false, fmt.Errorf("failed to check subject block status: %w", err)
+	}
+
+	return count > 0, nil
+}
+
 // GetBlockReasonCounts retrieves block reason counts within a time range.
 func (s *BlockListServiceDefault) GetBlockReasonCounts(filters []queryutil.CrudFilter) ([]typesSvc.BlockReasonCount, error) {
 	var counts []models.BlockReasonCount
