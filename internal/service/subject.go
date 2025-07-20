@@ -60,7 +60,7 @@ func (s *SubjectServiceDefault) GetByID(id uint) (*models.Subject, error) {
 }
 
 // FindOrCreate finds an existing subject or creates a new one
-func (s *SubjectServiceDefault) FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType) (*models.Subject, error) {
+func (s *SubjectServiceDefault) FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType, sourceUrl string) (*models.Subject, error) {
 	var subject models.Subject
 	properties := map[string]any{
 		"identifier": identifier.Multihash(),
@@ -74,6 +74,7 @@ func (s *SubjectServiceDefault) FindOrCreate(identifier core.StorageHash, subjec
 			subject = models.Subject{
 				Identifier: identifier.Multihash(),
 				Type:       subjectType,
+				SourceURL:  sourceUrl,
 			}
 			if err := db.Create(context.Background(), s.ctx, s.db, &subject); err != nil {
 				s.logger.Error("Failed to create subject", zap.Error(err), zap.Stringer("identifier", identifier), zap.String("type", string(subjectType)))

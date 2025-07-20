@@ -119,7 +119,7 @@ func TestSubjectService_FindOrCreate_Existing(t *testing.T) {
 		require.NoError(tb, err)
 
 		// Act
-		retrievedSubject, err := subjectService.FindOrCreate(core.NewStorageHashFromRawMultihash(mh), subjectType)
+		retrievedSubject, err := subjectService.FindOrCreate(core.NewStorageHashFromRawMultihash(mh), subjectType, "")
 
 		// Assert
 		require.NoError(tb, err)
@@ -146,7 +146,7 @@ func TestSubjectService_FindOrCreate_New(t *testing.T) {
 		subjectType := models.SubjectTypeHash
 
 		// Act
-		createdSubject, err := subjectService.FindOrCreate(_hash, subjectType)
+		createdSubject, err := subjectService.FindOrCreate(_hash, subjectType, "")
 
 		// Assert
 		require.NoError(tb, err)
