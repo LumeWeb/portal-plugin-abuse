@@ -1,6 +1,6 @@
 Dear {{.ReporterName}},
 
-New evidence has been added to your case (#{{.CaseID}}) with {{.PortalName}}.
+New evidence has been added to your case (#{{.ReferenceNumber}}) with {{.PortalName}}.
 
 Evidence Details:
 - File Name: {{.FileName}}
@@ -8,7 +8,7 @@ Evidence Details:
 - Uploaded: {{.UploadDate}}
 
 Case Details:
-- Reference Number: {{.CaseID}}
+- Reference Number: {{.ReferenceNumber}}
 - Type: {{.CaseType}} 
 - Status: {{.CaseStatus}}
 
@@ -18,5 +18,5 @@ You can view this evidence and manage your case here:
 Best regards,
 The {{.PortalName}} Team
 
-Reference: {{.CaseID}}
+Reference: {{.ReferenceNumber}}
 This is an automated notification.

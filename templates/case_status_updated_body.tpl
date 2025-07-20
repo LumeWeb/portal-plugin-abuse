@@ -1,13 +1,13 @@
 Dear {{.ReporterName}},
 
-The status of your case (#{{.CaseID}}) with {{.PortalName}} has changed.
+The status of your case (#{{.ReferenceNumber}}) with {{.PortalName}} has changed.
 
 New Status: {{.NewStatus}}
 Previous Status: {{.OldStatus}}
 Date Updated: {{.UpdatedDate}}
 
 Case Details:
-- Reference Number: {{.CaseID}}
+- Reference Number: {{.ReferenceNumber}}
 - Type: {{.CaseType}}
 - Date Submitted: {{.CreatedDate}}
 
@@ -17,5 +17,5 @@ Reply to this email with any questions.
 Best regards,  
 The {{.PortalName}} Team
 
-Reference: {{.CaseID}}
+Reference: {{.ReferenceNumber}}
 This is an automated email.
