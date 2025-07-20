@@ -67,7 +67,7 @@ func (r *AbuseReportRequest) Schema() *z.StructSchema {
 	return z.Struct(z.Schema{
 		"Email":             z.String().Required().Email(),
 		"Location":          z.String().Required().URL(),
-		"AbuseType":         z.String().Required().OneOf(models.ValidCaseTypes),
+		"AbuseType":         z.StringLike[models.CaseType]().Required().OneOf(models.ValidCaseTypes),
 		"Description":       z.String().Required().Min(10),
 		"AdditionalDetails": z.String().Optional(),
 	})
