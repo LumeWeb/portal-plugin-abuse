@@ -1,1 +1,1 @@
-Case Status Updated: {{.CaseID}}
+Case Status Updated: {{.ReferenceNumber}}

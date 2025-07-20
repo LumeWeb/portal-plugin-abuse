@@ -143,7 +143,7 @@ func (s *CaseServiceDefault) SendCreationNotification(caseID uint) error {
 			"ReporterEmail": reporter.Email,
 			"SubjectType":   subject.Type,
 			"SubjectHash":   subject.Identifier,
-			"AccessURL":     fmt.Sprintf("%s/access?token=%s", siteURL, accessToken),
+			"AccessURL":     fmt.Sprintf("%s/case/access?token=%s", siteURL, accessToken),
 			"ExpiresIn":     "90 days",
 			"PortalName":    s.ctx.Config().Config().Core.PortalName,
 			"CreatedDate":   caseModel.CreatedAt.Format("January 2, 2006"),
@@ -215,12 +215,13 @@ func (s *CaseServiceDefault) SendStatusUpdateNotification(caseID uint, oldStatus
 	siteURL := core.GetService[core.HTTPService](s.ctx, core.HTTP_SERVICE).APISubdomain("admin", true)
 
 	templateData := core.MailerTemplateData{
-		"CaseID":      caseModel.ID,
 		"Reference":   caseModel.ReferenceNumber,
 		"OldStatus":   oldStatus,
 		"NewStatus":   newStatus,
+		"CaseType":    caseModel.Type,
 		"PortalName":  s.ctx.Config().Config().Core.PortalName,
 		"UpdatedDate": time.Now().Format("January 2, 2006 15:04"),
+		"CreatedDate": caseModel.CreatedAt.Format("January 2, 2006 15:04"),
 		"DetailsURL":  fmt.Sprintf("%s/case/%s", siteURL, caseModel.ReferenceNumber),
 		"ReplyTo":     threadID,
 	}
