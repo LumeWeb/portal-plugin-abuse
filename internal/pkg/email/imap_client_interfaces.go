@@ -29,6 +29,9 @@ type IMAPClientConn interface {
 
 	// Store updates message flags
 	Store(seqSet *imap.SeqSet, item imap.StoreItem, flags []interface{}, ch chan *imap.Message) error
+	
+	// Noop sends a NOOP command to keep the connection alive
+	Noop() error
 }
 
 // IMAPDialer defines the interface for connecting to an IMAP server
@@ -88,6 +91,11 @@ func (a *IMAPClientAdapter) Fetch(seqSet *imap.SeqSet, items []imap.FetchItem, c
 // Store implements IMAPClientConn
 func (a *IMAPClientAdapter) Store(seqSet *imap.SeqSet, item imap.StoreItem, flags []interface{}, ch chan *imap.Message) error {
 	return a.client.Store(seqSet, item, flags, ch)
+}
+
+// Noop implements IMAPClientConn
+func (a *IMAPClientAdapter) Noop() error {
+	return a.client.Noop()
 }
 
 // Package level variable for our IMAP dialer, which can be replaced in tests
