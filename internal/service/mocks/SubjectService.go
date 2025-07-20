@@ -101,8 +101,8 @@ func (_c *MockSubjectService_Create_Call) RunAndReturn(run func(subject *models.
 }
 
 // FindOrCreate provides a mock function for the type MockSubjectService
-func (_mock *MockSubjectService) FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType) (*models.Subject, error) {
-	ret := _mock.Called(identifier, subjectType)
+func (_mock *MockSubjectService) FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType, url string) (*models.Subject, error) {
+	ret := _mock.Called(identifier, subjectType, url)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FindOrCreate")
@@ -110,18 +110,18 @@ func (_mock *MockSubjectService) FindOrCreate(identifier core.StorageHash, subje
 
 	var r0 *models.Subject
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(core.StorageHash, models.SubjectType) (*models.Subject, error)); ok {
-		return returnFunc(identifier, subjectType)
+	if returnFunc, ok := ret.Get(0).(func(core.StorageHash, models.SubjectType, string) (*models.Subject, error)); ok {
+		return returnFunc(identifier, subjectType, url)
 	}
-	if returnFunc, ok := ret.Get(0).(func(core.StorageHash, models.SubjectType) *models.Subject); ok {
-		r0 = returnFunc(identifier, subjectType)
+	if returnFunc, ok := ret.Get(0).(func(core.StorageHash, models.SubjectType, string) *models.Subject); ok {
+		r0 = returnFunc(identifier, subjectType, url)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*models.Subject)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(core.StorageHash, models.SubjectType) error); ok {
-		r1 = returnFunc(identifier, subjectType)
+	if returnFunc, ok := ret.Get(1).(func(core.StorageHash, models.SubjectType, string) error); ok {
+		r1 = returnFunc(identifier, subjectType, url)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -136,11 +136,12 @@ type MockSubjectService_FindOrCreate_Call struct {
 // FindOrCreate is a helper method to define mock.On call
 //   - identifier core.StorageHash
 //   - subjectType models.SubjectType
-func (_e *MockSubjectService_Expecter) FindOrCreate(identifier interface{}, subjectType interface{}) *MockSubjectService_FindOrCreate_Call {
-	return &MockSubjectService_FindOrCreate_Call{Call: _e.mock.On("FindOrCreate", identifier, subjectType)}
+//   - url string
+func (_e *MockSubjectService_Expecter) FindOrCreate(identifier interface{}, subjectType interface{}, url interface{}) *MockSubjectService_FindOrCreate_Call {
+	return &MockSubjectService_FindOrCreate_Call{Call: _e.mock.On("FindOrCreate", identifier, subjectType, url)}
 }
 
-func (_c *MockSubjectService_FindOrCreate_Call) Run(run func(identifier core.StorageHash, subjectType models.SubjectType)) *MockSubjectService_FindOrCreate_Call {
+func (_c *MockSubjectService_FindOrCreate_Call) Run(run func(identifier core.StorageHash, subjectType models.SubjectType, url string)) *MockSubjectService_FindOrCreate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 core.StorageHash
 		if args[0] != nil {
@@ -150,9 +151,14 @@ func (_c *MockSubjectService_FindOrCreate_Call) Run(run func(identifier core.Sto
 		if args[1] != nil {
 			arg1 = args[1].(models.SubjectType)
 		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -163,7 +169,7 @@ func (_c *MockSubjectService_FindOrCreate_Call) Return(subject *models.Subject, 
 	return _c
 }
 
-func (_c *MockSubjectService_FindOrCreate_Call) RunAndReturn(run func(identifier core.StorageHash, subjectType models.SubjectType) (*models.Subject, error)) *MockSubjectService_FindOrCreate_Call {
+func (_c *MockSubjectService_FindOrCreate_Call) RunAndReturn(run func(identifier core.StorageHash, subjectType models.SubjectType, url string) (*models.Subject, error)) *MockSubjectService_FindOrCreate_Call {
 	_c.Call.Return(run)
 	return _c
 }

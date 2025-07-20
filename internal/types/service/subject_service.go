@@ -17,7 +17,7 @@ type SubjectService interface {
 	GetByID(id uint) (*models.Subject, error)
 
 	// FindOrCreate finds an existing subject or creates a new one
-	FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType) (*models.Subject, error)
+	FindOrCreate(identifier core.StorageHash, subjectType models.SubjectType, url string) (*models.Subject, error)
 
 	// FindOrCreateByURL finds an existing subject by URL or creates a new one
 	FindOrCreateByURL(url string, subjectType models.SubjectType) (*models.Subject, error)

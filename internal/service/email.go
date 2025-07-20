@@ -259,7 +259,7 @@ func (s *EmailServiceDefault) handleProcessedEmail(ctx context.Context, data io.
 	case result.Case != nil:
 		processErr = s.handleNewCase(result.Case, result.Email)
 	case result.ThreadMatch != nil:
-		processErr = s.handleThreadMatch(ctx, result.ThreadMatch, data)
+		processErr = s.handleThreadMatch(result.ThreadMatch, data)
 	default:
 		processErr = fmt.Errorf("unknown email processing result type")
 	}
@@ -300,18 +300,23 @@ func (s *EmailServiceDefault) handleARFReport(arfData *email.ARFReport, caseMode
 		return err
 	}
 
-	// Extract subjects first
+	// Extract hashes first - we require at least one valid hash
+	hashSubjectIDs, err := s.extractAndLinkHashSubjects(arfData.FeedbackText)
+	if err != nil {
+		return fmt.Errorf("error extracting hash subjects: %w", err)
+	}
+	if len(hashSubjectIDs) == 0 {
+		s.logger.Info("Skipping ARF report - no valid hashes found")
+		return nil
+	}
+
+	// Extract URLs if available (optional)
 	urlSubjectIDs, err := s.extractAndLinkURLSubjects(arfData.FeedbackText)
 	if err != nil {
 		return fmt.Errorf("error extracting URL subjects: %w", err)
 	}
 
-	hashSubjectIDs, err := s.extractAndLinkHashSubjects(arfData.FeedbackText)
-	if err != nil {
-		return fmt.Errorf("error extracting hash subjects: %w", err)
-	}
-
-	allSubjectIDs := append(urlSubjectIDs, hashSubjectIDs...)
+	allSubjectIDs := lo.Uniq(append(hashSubjectIDs, urlSubjectIDs...))
 
 	// Check reporter trust status once before the loop
 	isTrusted, err := s.reporterSvc.IsTrusted(reporter)
@@ -410,18 +415,24 @@ func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *lette
 		}
 	}
 
-	// Extract subjects first
+	// Extract hashes first - we require at least one valid hash
+	hashSubjectIDs, err := s.extractAndLinkHashSubjects(email.Text)
+	if err != nil {
+		return fmt.Errorf("error extracting hash subjects: %w", err)
+	}
+	if len(hashSubjectIDs) == 0 {
+		s.logger.Info("Skipping email - no valid hashes found")
+		return nil
+	}
+
+	// Extract URLs if available (optional)
 	urlSubjectIDs, err := s.extractAndLinkURLSubjects(email.Text)
 	if err != nil {
 		return fmt.Errorf("error extracting URL subjects: %w", err)
 	}
 
-	hashSubjectIDs, err := s.extractAndLinkHashSubjects(email.Text)
-	if err != nil {
-		return fmt.Errorf("error extracting hash subjects: %w", err)
-	}
-
-	allSubjectIDs := append(urlSubjectIDs, hashSubjectIDs...)
+	allSubjectIDs := append(hashSubjectIDs, urlSubjectIDs...)
+	allSubjectIDs = lo.Uniq(allSubjectIDs)
 
 	// Create cases for each subject
 	for _, subjectID := range allSubjectIDs {
@@ -483,21 +494,21 @@ func (s *EmailServiceDefault) ProcessIncomingEmail(ctx context.Context, rawEmail
 }
 
 // handleThreadMatch adds communication to an existing case
-func (s *EmailServiceDefault) handleThreadMatch(ctx context.Context, match *email.ThreadMatch, rawEmail io.Reader) error {
+func (s *EmailServiceDefault) handleThreadMatch(match *email.ThreadMatch, rawEmail io.Reader) error {
 	if s.commSvc == nil {
 		return fmt.Errorf("communication service not available")
 	}
 
 	// Parse the email content
-	email, err := letters.ParseEmail(rawEmail)
+	_email, err := letters.ParseEmail(rawEmail)
 	if err != nil {
 		return fmt.Errorf("failed to parse email: %w", err)
 	}
 
 	// Get email content
-	content := email.Text
+	content := _email.Text
 	if content == "" {
-		content = email.HTML
+		content = _email.HTML
 	}
 
 	// Create communication record
@@ -527,7 +538,7 @@ func (s *EmailServiceDefault) handleThreadMatch(ctx context.Context, match *emai
 	}
 
 	// Extract subject from email headers
-	subject := email.Headers.Subject
+	subject := _email.Headers.Subject
 	if subject == "" {
 		subject = "(no subject)"
 	}
@@ -667,7 +678,7 @@ func (s *EmailServiceDefault) hashEmailContent(email *letters.Email) ([]byte, er
 	return hash[:], nil
 }
 
-// extractAndLinkURLSubjects extracts URLs from email content and links them to case
+// extractAndLinkURLSubjects extracts hashes from URLs in email content and links them to case
 func (s *EmailServiceDefault) extractAndLinkURLSubjects(emailContent string) ([]uint, error) {
 	if s.subjectSvc == nil {
 		s.logger.Error("Subject service not available")
@@ -686,14 +697,39 @@ func (s *EmailServiceDefault) extractAndLinkURLSubjects(emailContent string) ([]
 	subjectIDs := make([]uint, 0, len(urls)) // Pre-allocate slice
 
 	for _, url := range urls {
-		subject, err := s.subjectSvc.FindOrCreateByURL(url, models.SubjectTypeURL)
-		if err != nil {
-			s.logger.Error("Failed to create subject from URL",
-				zap.Error(err),
-				zap.String("url", url))
-			return nil, fmt.Errorf("failed to create subject from URL: %w", err)
+		feedbackEmail = &letters.Email{
+			Text: url,
 		}
-		subjectIDs = append(subjectIDs, subject.ID)
+		// Try to extract hashes from URL path
+		hashes := contentExtractor.ExtractHashes(feedbackEmail)
+		if len(hashes) == 0 {
+			s.logger.Debug("No hashes found in URL",
+				zap.String("url", url))
+			continue
+		}
+
+		// Process each found hash
+		for _, hash := range hashes {
+			// Create subject for the hash if found
+			sHash, err := core.ParseStorageHash(hash)
+			if err != nil {
+				s.logger.Warn("Failed to parse hash from URL",
+					zap.String("url", url),
+					zap.String("hash", hash),
+					zap.Error(err))
+				continue
+			}
+
+			hashSubject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash, url)
+			if err != nil {
+				s.logger.Error("Failed to create subject from hash in URL",
+					zap.String("url", url),
+					zap.String("hash", hash),
+					zap.Error(err))
+				continue
+			}
+			subjectIDs = append(subjectIDs, hashSubject.ID)
+		}
 	}
 
 	return subjectIDs, nil
@@ -726,7 +762,7 @@ func (s *EmailServiceDefault) extractAndLinkHashSubjects(emailContent string) ([
 			return nil, fmt.Errorf("failed to parse hash: %w", err)
 		}
 
-		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash)
+		subject, err := s.subjectSvc.FindOrCreate(sHash, models.SubjectTypeHash, "")
 		if err != nil {
 			s.logger.Error("Failed to create subject from hash",
 				zap.Error(err),
