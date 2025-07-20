@@ -101,7 +101,7 @@ func (c *Case) Validate() error {
 
 	validTypes := make(map[CaseType]bool)
 	for _, t := range ValidCaseTypes {
-		validTypes[CaseType(t)] = true
+		validTypes[t] = true
 	}
 
 	if !validTypes[c.Type] {

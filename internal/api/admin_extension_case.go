@@ -272,13 +272,16 @@ func (e *AdminExtension) updateCase(c echo.Context) error {
 			existingCase.Description = *requestDto.Description
 		}
 		if requestDto.Type != nil {
-			existingCase.Type = models.CaseType(*requestDto.Type)
+			existingCase.Type = *requestDto.Type
 		}
 		if requestDto.Priority != nil {
-			existingCase.Priority = models.CasePriority(*requestDto.Priority)
+			existingCase.Priority = *requestDto.Priority
 		}
 		if requestDto.Source != nil {
-			existingCase.Source = models.ReportSource(*requestDto.Source)
+			existingCase.Source = *requestDto.Source
+		}
+		if requestDto.Status != nil {
+			existingCase.Status = *requestDto.Status
 		}
 		if requestDto.NeedsReview != nil {
 			existingCase.NeedsReview = *requestDto.NeedsReview
@@ -288,6 +291,9 @@ func (e *AdminExtension) updateCase(c echo.Context) error {
 		}
 		if requestDto.SubjectID != nil {
 			existingCase.SubjectID = uint(*requestDto.SubjectID)
+		}
+		if requestDto.Status != nil {
+			existingCase.Status = *requestDto.Status
 		}
 	}
 

@@ -16,24 +16,25 @@ var _ httputil.DTOResponse[*models.Case] = (*PublicCaseResponse)(nil)
 
 // CaseCreateRequest represents the data needed to create a case
 type CreateCaseRequest struct {
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	Priority    string `json:"priority"`
-	Source      string `json:"source"`
-	NeedsReview bool   `json:"needs_review"`
-	ReporterID  int    `json:"reporter_id"`
-	SubjectID   int    `json:"subject_id"`
+	Description string              `json:"description"`
+	Type        models.CaseType     `json:"type"`
+	Priority    models.CasePriority `json:"priority"`
+	Source      models.ReportSource `json:"source"`
+	NeedsReview bool                `json:"needs_review"`
+	ReporterID  int                 `json:"reporter_id"`
+	SubjectID   int                 `json:"subject_id"`
 }
 
 // CaseUpdateRequest represents the data needed to update a case
 type UpdateCaseRequest struct {
-	Description *string `json:"description"`
-	Type        *string `json:"type,omitempty"`
-	Priority    *string `json:"priority,omitempty"`
-	Source      *string `json:"source,omitempty"`
-	NeedsReview *bool   `json:"needs_review,omitempty"`
-	ReporterID  *int    `json:"reporter_id,omitempty"`
-	SubjectID   *int    `json:"subject_id,omitempty"`
+	Description *string              `json:"description"`
+	Type        *models.CaseType     `json:"type,omitempty"`
+	Status      *models.CaseStatus   `json:"status,omitempty"`
+	Priority    *models.CasePriority `json:"priority,omitempty"`
+	Source      *models.ReportSource `json:"source,omitempty"`
+	NeedsReview *bool                `json:"needs_review,omitempty"`
+	ReporterID  *int                 `json:"reporter_id,omitempty"`
+	SubjectID   *int                 `json:"subject_id,omitempty"`
 }
 
 // ToModel converts an update request DTO to a model
@@ -45,13 +46,13 @@ func (req *UpdateCaseRequest) ToModel() (*models.Case, error) {
 	}
 
 	if req.Type != nil {
-		caseModel.Type = models.CaseType(*req.Type)
+		caseModel.Type = *req.Type
 	}
 	if req.Priority != nil {
-		caseModel.Priority = models.CasePriority(*req.Priority)
+		caseModel.Priority = *req.Priority
 	}
 	if req.Source != nil {
-		caseModel.Source = models.ReportSource(*req.Source)
+		caseModel.Source = *req.Source
 	}
 	if req.NeedsReview != nil {
 		caseModel.NeedsReview = *req.NeedsReview
@@ -62,16 +63,19 @@ func (req *UpdateCaseRequest) ToModel() (*models.Case, error) {
 	if req.SubjectID != nil {
 		caseModel.SubjectID = uint(*req.SubjectID)
 	}
+	if req.Status != nil {
+		caseModel.Status = *req.Status
+	}
 
 	return caseModel, nil
 }
 
 func (r *CreateCaseRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
-		"Type":        z.String().Required().OneOf(models.ValidCaseTypes),
+	return z.Struct(z.Shape{
+		"Type":        z.StringLike[models.CaseType]().Required().OneOf(models.ValidCaseTypes),
 		"Description": z.String().Required().Min(10),
-		"Priority":    z.String().Optional().OneOf(models.ValidCasePriorities),
-		"Source":      z.String().Optional().OneOf(models.ValidReportSources),
+		"Priority":    z.StringLike[models.CasePriority]().OneOf(models.ValidCasePriorities),
+		"Source":      z.StringLike[models.ReportSource]().Optional().OneOf(models.ValidReportSources),
 		"NeedsReview": z.Bool().Optional(),
 		"ReporterID":  z.Int().Required().GT(0),
 		"SubjectID":   z.Int().Required().GT(0),
@@ -79,14 +83,15 @@ func (r *CreateCaseRequest) Schema() *z.StructSchema {
 }
 
 func (r *UpdateCaseRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
-		"Type":        z.Ptr(z.String().Optional().OneOf(models.ValidCaseTypes)),
+	return z.Struct(z.Shape{
+		"Type":        z.Ptr(z.StringLike[models.CaseType]().Optional().OneOf(models.ValidCaseTypes)),
 		"Description": z.Ptr(z.String().Optional().Min(10)),
-		"Priority":    z.Ptr(z.String().Optional().OneOf(models.ValidCasePriorities)),
-		"Source":      z.Ptr(z.String().Optional().OneOf(models.ValidReportSources)),
+		"Priority":    z.Ptr(z.StringLike[models.CasePriority]().Optional().OneOf(models.ValidCasePriorities)),
+		"Source":      z.Ptr(z.StringLike[models.ReportSource]().Optional().OneOf(models.ValidReportSources)),
 		"NeedsReview": z.Ptr(z.Bool().Optional()),
 		"ReporterID":  z.Ptr(z.Int().Optional().GT(0)),
 		"SubjectID":   z.Ptr(z.Int().Optional().GT(0)),
+		"Status":      z.Ptr(z.StringLike[models.CaseStatus]().Optional().OneOf(models.ValidCaseStatuses)),
 	})
 }
 
