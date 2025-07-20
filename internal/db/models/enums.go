@@ -12,87 +12,87 @@ import (
 // 90  - Critical (Malware)
 // 80  - High (Phishing)
 // 70  - Elevated (Harassment)
-// 60  - Moderate (Resource Abuse) 
+// 60  - Moderate (Resource Abuse)
 // 50  - Standard (Copyright)
 // 30  - Low (Spam)
 // 10  - Routine (Other)
 type CaseType string
 
 const (
-	CaseTypeSpam                   CaseType = "spam"
-	CaseTypeHarassment             CaseType = "harassment"
-	CaseTypeMalware                CaseType = "malware"
-	CaseTypePhishing               CaseType = "phishing"
-	CaseTypeCopyrightViolation     CaseType = "copyright_violation"
-	CaseTypeResourceAbuse          CaseType = "resource_abuse"
+	CaseTypeSpam                    CaseType = "spam"
+	CaseTypeHarassment              CaseType = "harassment"
+	CaseTypeMalware                 CaseType = "malware"
+	CaseTypePhishing                CaseType = "phishing"
+	CaseTypeCopyrightViolation      CaseType = "copyright_violation"
+	CaseTypeResourceAbuse           CaseType = "resource_abuse"
 	CaseTypeIllegalOrHarmfulContent CaseType = "illegal_or_harmful_content"
-	CaseTypeOther                  CaseType = "other"
+	CaseTypeOther                   CaseType = "other"
 )
 
 // ValidCaseTypes contains all valid CaseType values for validation
-var ValidCaseTypes = []string{
-	string(CaseTypeSpam),
-	string(CaseTypeHarassment),
-	string(CaseTypeMalware),
-	string(CaseTypePhishing),
-	string(CaseTypeCopyrightViolation),
-	string(CaseTypeResourceAbuse),
-	string(CaseTypeIllegalOrHarmfulContent),
-	string(CaseTypeOther),
+var ValidCaseTypes = []CaseType{
+	CaseTypeSpam,
+	CaseTypeHarassment,
+	CaseTypeMalware,
+	CaseTypePhishing,
+	CaseTypeCopyrightViolation,
+	CaseTypeResourceAbuse,
+	CaseTypeIllegalOrHarmfulContent,
+	CaseTypeOther,
 }
 
 // ValidCasePriorities contains all valid CasePriority values
-var ValidCasePriorities = []string{
-	string(CasePriorityLow),
-	string(CasePriorityMedium),
-	string(CasePriorityHigh),
-	string(CasePriorityCritical),
+var ValidCasePriorities = []CasePriority{
+	CasePriorityLow,
+	CasePriorityMedium,
+	CasePriorityHigh,
+	CasePriorityCritical,
 }
 
 // ValidCasePriorityMap provides O(1) lookups for valid priorities
-var ValidCasePriorityMap = lo.SliceToMap(ValidCasePriorities, func(s string) (CasePriority, bool) {
-	return CasePriority(s), true
+var ValidCasePriorityMap = lo.SliceToMap(ValidCasePriorities, func(s CasePriority) (CasePriority, bool) {
+	return s, true
 })
 
 // ValidCaseStatuses contains all valid CaseStatus values
-var ValidCaseStatuses = []string{
-	string(CaseStatusNew),
-	string(CaseStatusInProgress),
-	string(CaseStatusResolved),
-	string(CaseStatusClosed),
+var ValidCaseStatuses = []CaseStatus{
+	CaseStatusNew,
+	CaseStatusInProgress,
+	CaseStatusResolved,
+	CaseStatusClosed,
 }
 
 // CaseTypePriority defines response urgency where HIGHER numbers = HIGHER priority
-// 100: Emergency (e.g., CSAM, active violence)  
+// 100: Emergency (e.g., CSAM, active violence)
 // 10: Routine (e.g., spam, non-urgent reports)
 var CaseTypePriority = map[CaseType]int{
 	// Emergency response (90-100)
 	CaseTypeIllegalOrHarmfulContent: 100, // e.g., CSAM, violent threats
 	CaseTypeMalware:                 90,  // Active exploits/ransomware
-	
+
 	// High priority (70-80)
-	CaseTypePhishing:                80,  // Credential theft
-	CaseTypeHarassment:              70,  // Doxing/stalking
-	
-	// Medium priority (40-60) 
-	CaseTypeResourceAbuse:           60,  // DDoS/mining
-	CaseTypeCopyrightViolation:      50,  // Takedowns
-	
+	CaseTypePhishing:   80, // Credential theft
+	CaseTypeHarassment: 70, // Doxing/stalking
+
+	// Medium priority (40-60)
+	CaseTypeResourceAbuse:      60, // DDoS/mining
+	CaseTypeCopyrightViolation: 50, // Takedowns
+
 	// Low priority (10-30)
-	CaseTypeSpam:                    30,  // Bulk emails
-	CaseTypeOther:                   10,  // Catch-all
+	CaseTypeSpam:  30, // Bulk emails
+	CaseTypeOther: 10, // Catch-all
 }
 
 // ValidCaseStatusMap provides O(1) lookups for valid statuses
-var ValidCaseStatusMap = lo.SliceToMap(ValidCaseStatuses, func(s string) (CaseStatus, bool) {
-	return CaseStatus(s), true
+var ValidCaseStatusMap = lo.SliceToMap(ValidCaseStatuses, func(s CaseStatus) (CaseStatus, bool) {
+	return s, true
 })
 
 // ValidReportSources contains all valid ReportSource values
-var ValidReportSources = []string{
-	string(ReportSourceWebForm),
-	string(ReportSourceEmail),
-	string(ReportSourceAPI),
+var ValidReportSources = []ReportSource{
+	ReportSourceWebForm,
+	ReportSourceEmail,
+	ReportSourceAPI,
 }
 
 // CaseStatus defines the current status of a case
