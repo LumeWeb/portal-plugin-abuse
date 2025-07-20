@@ -142,15 +142,16 @@ func (e *AdminExtension) createCase(c echo.Context) error {
 
 	// Prepare and send response
 	var responseDto dto.CaseResponse
-	// Use ctx.Encode for encoding
-	if err := responseDto.FromModel(createdCase); err != nil {
+
+	c.Response().Before(func() {
+		c.Response().Status = http.StatusCreated
+	})
+
+	if err = httputil.EncodeResponse(ctx, createdCase, &responseDto); err != nil {
 		e.logger.Error("Failed to convert case to DTO", zap.Error(err))
-		return ctx.Error(errors.New("failed to process response"), http.StatusInternalServerError)
 	}
 
-	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSONCharsetUTF8)
-	c.Response().WriteHeader(http.StatusCreated)
-	return ctx.Encode(responseDto)
+	return nil
 }
 
 // getCase retrieves a specific case by ID
@@ -183,12 +184,12 @@ func (e *AdminExtension) getCase(c echo.Context) error {
 
 	// Prepare and send response
 	var responseDto dto.CaseResponse
-	if err := responseDto.FromModel(caseModel); err != nil {
+
+	if err = httputil.EncodeResponse(ctx, caseModel, &responseDto); err != nil {
 		e.logger.Error("Failed to convert case to DTO", zap.Error(err))
-		return ctx.Error(errors.New("failed to process response"), http.StatusInternalServerError)
 	}
 
-	return ctx.Encode(responseDto)
+	return nil
 }
 
 // listCases returns a list of cases with filtering and pagination
@@ -265,30 +266,43 @@ func (e *AdminExtension) updateCase(c echo.Context) error {
 		return nil // Return nil as the error is already handled
 	}
 
-	// The DecodeAndValidateRequest helper should handle applying DTO fields to the model.
-	// If it doesn't, you would manually apply them here, similar to the previous version:
-	// if requestDto.Type != nil { existingCase.Type = models.CaseType(*requestDto.Type) }
-	// ... and then pass existingCase to the service.
-	// Assuming DecodeAndValidateRequest updates the model directly or returns the updated model:
-	caseToUpdate := existingCase // Start with the fetched case
+	// Apply each updated field from the DTO to the existing case while preserving existing data
 	if updatedCase != nil {
-		caseToUpdate = updatedCase // Use the model returned by DecodeAndValidateRequest if it provides the updated one
+		if requestDto.Description != nil {
+			existingCase.Description = *requestDto.Description
+		}
+		if requestDto.Type != nil {
+			existingCase.Type = models.CaseType(*requestDto.Type)
+		}
+		if requestDto.Priority != nil {
+			existingCase.Priority = models.CasePriority(*requestDto.Priority)
+		}
+		if requestDto.Source != nil {
+			existingCase.Source = models.ReportSource(*requestDto.Source)
+		}
+		if requestDto.NeedsReview != nil {
+			existingCase.NeedsReview = *requestDto.NeedsReview
+		}
+		if requestDto.ReporterID != nil {
+			existingCase.ReporterID = uint(*requestDto.ReporterID)
+		}
+		if requestDto.SubjectID != nil {
+			existingCase.SubjectID = uint(*requestDto.SubjectID)
+		}
 	}
 
 	// Update the case
-	if err := e.caseService.Update(caseToUpdate); err != nil {
+	if err = e.caseService.Update(existingCase); err != nil {
 		e.logger.Error("Failed to update case", zap.Error(err))
 		return ctx.Error(errors.New("failed to update case"), http.StatusInternalServerError)
 	}
 
 	// Prepare and send response
 	var responseDto dto.CaseResponse
-	if err := responseDto.FromModel(caseToUpdate); err != nil { // Use caseToUpdate for response DTO
+
+	if err = httputil.EncodeResponse(ctx, existingCase, &responseDto); err != nil {
 		e.logger.Error("Failed to convert case to DTO", zap.Error(err))
-		return ctx.Error(errors.New("failed to process response"), http.StatusInternalServerError)
 	}
 
-	ctx.Encode(responseDto) // Use ctx.Encode
-
-	return nil // Return nil on success
+	return nil
 }
