@@ -70,7 +70,16 @@ func (s *BlockListServiceDefault) IsBlocked(hash core.StorageHash) (bool, *model
 
 // BlockContent adds a content hash to the block list
 func (s *BlockListServiceDefault) BlockContent(block *models.BlockList) (*models.BlockList, error) {
-	if err := db.Create(context.Background(), s.ctx, s.db, block); err != nil {
+	// First check if content is already blocked
+	isBlocked, existingBlock, err := s.IsBlocked(core.NewStorageHashFromRawMultihash(block.Hash))
+	if err != nil {
+		return nil, fmt.Errorf("failed to check block status: %w", err)
+	}
+	if isBlocked {
+		return existingBlock, nil
+	}
+
+	if err = db.Create(context.Background(), s.ctx, s.db, block); err != nil {
 		s.logger.Error("Failed to block content", zap.Error(err), zap.Stringer("hash", block.Hash))
 		return nil, fmt.Errorf("failed to block content: %w", err)
 	}
