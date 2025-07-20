@@ -33,10 +33,10 @@ type ProviderTemplateUpdateRequest struct {
 }
 
 func (r *ProviderTemplateCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
-		"Name":             z.String().Required().Min(2),
-		"Enabled":          z.Bool().Optional().Default(true),
-		"Priority":         z.Int().Optional().Default(100).GT(0),
+	return z.Struct(z.Shape{
+		"Name":            z.String().Required().Min(2),
+		"Enabled":         z.Bool().Optional().Default(true),
+		"Priority":        z.Int().Optional().Default(100).GT(0),
 		"DomainPatterns":  z.Slice(z.String().Required().Min(1)),
 		"HeaderPatterns":  z.Slice(z.String()),
 		"ContentPatterns": z.Slice(z.String()),
@@ -44,12 +44,12 @@ func (r *ProviderTemplateCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *ProviderTemplateUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Name":            z.Ptr(z.String().Optional().Min(2)),
 		"Enabled":         z.Ptr(z.Bool().Optional()),
 		"Priority":        z.Ptr(z.Int().Optional().GT(0)),
-		"DomainPatterns": z.Ptr(z.Slice(z.String().Required().Min(1))),
-		"HeaderPatterns": z.Ptr(z.Slice(z.String())),
+		"DomainPatterns":  z.Ptr(z.Slice(z.String().Required().Min(1))),
+		"HeaderPatterns":  z.Ptr(z.Slice(z.String())),
 		"ContentPatterns": z.Ptr(z.Slice(z.String())),
 	})
 }
@@ -77,7 +77,7 @@ func (r *ProviderTemplateCreateRequest) ToModel() (*config.ProviderTemplateConfi
 
 func (r *ProviderTemplateUpdateRequest) ToModel() (*config.ProviderTemplateConfig, error) {
 	cfg := &config.ProviderTemplateConfig{}
-	
+
 	if r.Name != nil {
 		cfg.Name = *r.Name
 	}
@@ -96,7 +96,7 @@ func (r *ProviderTemplateUpdateRequest) ToModel() (*config.ProviderTemplateConfi
 	if r.ContentPatterns != nil {
 		cfg.ContentPatterns = *r.ContentPatterns
 	}
-	
+
 	return cfg, nil
 }
 

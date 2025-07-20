@@ -52,7 +52,7 @@ type TokenRefreshRequest struct {
 }
 
 func (r *TokenRefreshRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Token": z.String().Required(),
 	})
 }
@@ -65,7 +65,7 @@ func (req *TokenRefreshRequest) ToModel() (*models.Token, error) {
 }
 
 func (r *TokenCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"CaseID":     z.Int().Required().GT(0),
 		"ReporterID": z.Int().Required().GT(0),
 		"ValidDays":  z.Int().GT(1).LTE(365),
@@ -73,7 +73,7 @@ func (r *TokenCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *TokenUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Revoke": z.Ptr(z.Bool().Optional()),
 	})
 }

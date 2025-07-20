@@ -28,7 +28,7 @@ type SubjectUpdateRequest struct {
 }
 
 func (r *SubjectCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Identifier": z.String().Required().Min(3),
 		"Type": z.String().Required().OneOf([]string{
 			string(models.SubjectTypeHash),
@@ -38,7 +38,7 @@ func (r *SubjectCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *SubjectUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Identifier": z.Ptr(z.String().Optional().Min(3)),
 		"Type": z.Ptr(z.String().Optional().OneOf([]string{
 			string(models.SubjectTypeHash),

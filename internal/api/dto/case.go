@@ -177,7 +177,7 @@ func (r *CaseStatusUpdateRequest) ToModel() (*models.Case, error) {
 }
 
 func (r *CaseStatusUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Status": z.String().Required().OneOf([]string{
 			string(models.CaseStatusNew),
 			string(models.CaseStatusInProgress),
