@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"github.com/emersion/go-imap/client"
 	"sync"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
 )
+
+var ErrNotLoggedIn = client.ErrNotLoggedIn
 
 // IMAPClient defines the interface for IMAP clients
 type IMAPClient interface {
@@ -122,6 +125,27 @@ func (c *IMAPClientDefault) Stop() error {
 	return nil
 }
 
+// reconnect establishes a new connection to the IMAP server
+func (c *IMAPClientDefault) reconnect() error {
+	if c.client != nil {
+		_ = c.client.Logout() // Best effort logout
+	}
+
+	addr := fmt.Sprintf("%s:%d", c.config.IMAPHost, c.config.IMAPPort)
+	imapClient, err := c.dialer.DialTLS(addr, nil)
+	if err != nil {
+		return fmt.Errorf("failed to reconnect to IMAP server: %w", err)
+	}
+
+	if err := imapClient.Login(c.config.IMAPUser, c.config.IMAPPassword); err != nil {
+		return fmt.Errorf("failed to relogin to IMAP server: %w", err)
+	}
+
+	c.client = imapClient
+	c.logger.Info("Successfully reconnected to IMAP server")
+	return nil
+}
+
 // pollForEmails polls the IMAP server for new emails at regular intervals
 func (c *IMAPClientDefault) pollForEmails() {
 	defer c.waitGroup.Done()
@@ -138,6 +162,15 @@ func (c *IMAPClientDefault) pollForEmails() {
 			return
 		case <-ticker.C:
 			c.checkForNewEmails()
+		case <-time.After(5 * time.Minute): // Send NOOP every 5 minutes
+			if c.client != nil {
+				if err := c.client.Noop(); err != nil {
+					c.logger.Warn("IMAP connection appears dead, will reconnect", zap.Error(err))
+					if err := c.reconnect(); err != nil {
+						c.logger.Error("Failed to reconnect", zap.Error(err))
+					}
+				}
+			}
 		}
 	}
 }
@@ -156,8 +189,22 @@ func (c *IMAPClientDefault) checkForNewEmails() {
 
 	mbox, err := c.client.Select(mailbox, false)
 	if err != nil {
-		c.logger.Error("Failed to select mailbox", zap.String("mailbox", mailbox), zap.Error(err))
-		return
+		if err == ErrNotLoggedIn {
+			c.logger.Warn("Session expired, attempting to reconnect...", zap.String("mailbox", mailbox))
+			if err := c.reconnect(); err != nil {
+				c.logger.Error("Failed to reconnect", zap.Error(err))
+				return
+			}
+			// Retry after reconnecting
+			mbox, err = c.client.Select(mailbox, false)
+			if err != nil {
+				c.logger.Error("Failed to select mailbox after reconnect", zap.String("mailbox", mailbox), zap.Error(err))
+				return
+			}
+		} else {
+			c.logger.Error("Failed to select mailbox", zap.String("mailbox", mailbox), zap.Error(err))
+			return
+		}
 	}
 
 	if mbox.Messages == 0 {

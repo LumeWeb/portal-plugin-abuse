@@ -200,6 +200,50 @@ func (_c *MockIMAPClientConn_Logout_Call) RunAndReturn(run func() error) *MockIM
 	return _c
 }
 
+// Noop provides a mock function for the type MockIMAPClientConn
+func (_mock *MockIMAPClientConn) Noop() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Noop")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockIMAPClientConn_Noop_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Noop'
+type MockIMAPClientConn_Noop_Call struct {
+	*mock.Call
+}
+
+// Noop is a helper method to define mock.On call
+func (_e *MockIMAPClientConn_Expecter) Noop() *MockIMAPClientConn_Noop_Call {
+	return &MockIMAPClientConn_Noop_Call{Call: _e.mock.On("Noop")}
+}
+
+func (_c *MockIMAPClientConn_Noop_Call) Run(run func()) *MockIMAPClientConn_Noop_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockIMAPClientConn_Noop_Call) Return(err error) *MockIMAPClientConn_Noop_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockIMAPClientConn_Noop_Call) RunAndReturn(run func() error) *MockIMAPClientConn_Noop_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Search provides a mock function for the type MockIMAPClientConn
 func (_mock *MockIMAPClientConn) Search(criteria *imap.SearchCriteria) ([]uint32, error) {
 	ret := _mock.Called(criteria)
