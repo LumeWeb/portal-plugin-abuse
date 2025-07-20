@@ -85,7 +85,7 @@ func (e *AdminExtension) registerCaseHandlers(gRouter router.Router, accessSvc c
 		),
 
 		// Update Case
-		router.NewRoute(http.MethodPut, "/cases/:id", e.updateCase,
+		router.NewRoute(http.MethodPatch, "/cases/:id", e.updateCase,
 			router.WithAccess(core.ACCESS_ADMIN_ROLE),
 			router.WithSwagger(
 				router.WithSummary("Update Case"),

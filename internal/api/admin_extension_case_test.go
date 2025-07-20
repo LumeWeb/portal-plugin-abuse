@@ -192,7 +192,7 @@ func TestUpdateCase_Success(t *testing.T) {
 		require.NoError(tb, err)
 
 		// Act
-		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/1", body)
+		req := ctx.NewAPIRequest(http.MethodPatch, "/api/abuse/cases/1", body)
 		require.NotNil(tb, req)
 		w := httptest.NewRecorder()
 		ctx.Router().ServeHTTP(w, req)
@@ -216,7 +216,7 @@ func TestUpdateCase_NotFound(t *testing.T) {
 		require.NoError(tb, err)
 
 		// Act
-		req := ctx.NewAPIRequest(http.MethodPut, "/api/abuse/cases/999", body)
+		req := ctx.NewAPIRequest(http.MethodPatch, "/api/abuse/cases/999", body)
 		require.NotNil(tb, req)
 		w := httptest.NewRecorder()
 		ctx.Router().ServeHTTP(w, req)
