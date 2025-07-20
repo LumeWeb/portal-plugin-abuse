@@ -50,7 +50,7 @@ type EvidenceResponse struct {
 }
 
 func (r *EvidenceCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"FileName":    z.String().Required(),
 		"ContentType": z.String().Required(),
 		"Source": z.String().Required().OneOf([]string{
@@ -64,7 +64,7 @@ func (r *EvidenceCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *EvidenceUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"FileName":    z.Ptr(z.String().Optional()),
 		"ContentType": z.Ptr(z.String().Optional()),
 		"Source": z.Ptr(z.String().Optional().OneOf([]string{

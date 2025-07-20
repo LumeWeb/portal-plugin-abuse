@@ -18,11 +18,11 @@ var dtoLogger = core.NewLogger(nil)
 
 // AbuseReportRequest represents the incoming request for an abuse report
 type AbuseReportRequest struct {
-	Email             string `json:"email"`
-	Location          string `json:"location"`
-	AbuseType         string `json:"abuse_type"`
-	Description       string `json:"description"`
-	AdditionalDetails string `json:"additional_details,omitempty"`
+	Email             string          `json:"email"`
+	Location          string          `json:"location"`
+	AbuseType         models.CaseType `json:"abuse_type"`
+	Description       string          `json:"description"`
+	AdditionalDetails string          `json:"additional_details,omitempty"`
 }
 
 // ToCaseModel converts the DTO to a Case model
@@ -44,7 +44,7 @@ func (r AbuseReportRequest) ToModel() (*models.Case, error) {
 	}
 
 	caseModel := &models.Case{
-		Type:        models.CaseType(r.AbuseType),
+		Type:        r.AbuseType,
 		Status:      models.CaseStatusNew,
 		Priority:    models.CasePriorityMedium,
 		Description: r.Description,
@@ -64,7 +64,7 @@ func (r AbuseReportRequest) ToModel() (*models.Case, error) {
 }
 
 func (r *AbuseReportRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Email":             z.String().Required().Email(),
 		"Location":          z.String().Required().URL(),
 		"AbuseType":         z.StringLike[models.CaseType]().Required().OneOf(models.ValidCaseTypes),

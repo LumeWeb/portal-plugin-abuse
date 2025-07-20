@@ -31,7 +31,7 @@ type CommunicationUpdateRequest struct {
 }
 
 func (r *CommunicationCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Content": z.String().Required().Min(1),
 		"Type": z.String().Required().OneOf([]string{
 			string(models.CommunicationTypeEmail),
@@ -49,7 +49,7 @@ func (r *CommunicationCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *CommunicationUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Content": z.Ptr(z.String().Optional().Min(1)),
 		"Type": z.Ptr(z.String().Optional().OneOf([]string{
 			string(models.CommunicationTypeEmail),

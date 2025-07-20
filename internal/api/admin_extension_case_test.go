@@ -183,8 +183,8 @@ func TestUpdateCase_Success(t *testing.T) {
 
 		reqBody := dto.UpdateCaseRequest{
 			Description: lo.ToPtr("Updated description"),
-			Type:        lo.ToPtr(string(models.CaseTypeSpam)),
-			Priority:    lo.ToPtr(string(models.CasePriorityHigh)),
+			Type:        lo.ToPtr(models.CaseTypeSpam),
+			Priority:    lo.ToPtr(models.CasePriorityHigh),
 			ReporterID:  lo.ToPtr(1),
 			SubjectID:   lo.ToPtr(1),
 		}

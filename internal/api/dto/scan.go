@@ -78,7 +78,7 @@ func (r *ManualScanRequest) ToModel() (*models.CaseScan, error) {
 }
 
 func (r *ManualScanRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"CaseID": z.Int().Required().GT(0),
 	})
 }

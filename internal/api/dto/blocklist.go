@@ -119,7 +119,7 @@ func (r *BlockContentUpdateRequest) ToModel() (*models.BlockList, error) {
 }
 
 func (r *BlockContentCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Hash":       z.String().Required(),
 		"MimeType":   z.String().Optional(),
 		"FileName":   z.String().Optional(),
@@ -161,7 +161,7 @@ func (r *BlockContentCreateRequest) Schema() *z.StructSchema {
 }
 
 func (r *BlockContentUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"MimeType":   z.Ptr(z.String().Optional()),
 		"FileName":   z.Ptr(z.String().Optional()),
 		"Size":       z.Ptr(z.Int64().Optional()),

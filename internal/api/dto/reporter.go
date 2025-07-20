@@ -26,14 +26,14 @@ type ReporterUpdateRequest struct {
 }
 
 func (r *ReporterCreateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Email": z.String().Required().Email(),
 		"Name":  z.String().Required().Min(2),
 	})
 }
 
 func (r *ReporterUpdateRequest) Schema() *z.StructSchema {
-	return z.Struct(z.Schema{
+	return z.Struct(z.Shape{
 		"Email": z.Ptr(z.String().Optional().Email()),
 		"Name":  z.Ptr(z.String().Optional().Min(2)),
 	})
