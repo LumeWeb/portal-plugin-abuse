@@ -447,12 +447,22 @@ func (s *EmailServiceDefault) handleNewCase(caseModel *models.Case, email *lette
 
 	allSubjects := lo.UniqBy(append(hashSubjects, urlSubjects...), func(s *models.Subject) uint { return s.ID })
 
+	// Check reporter trust status once before the loop
+	isTrusted, err := s.reporterSvc.IsTrusted(reporter)
+	if err != nil {
+		s.logger.Error("Failed to check reporter trust status",
+			zap.Error(err),
+			zap.Uint("reporter_id", reporter.ID))
+		return fmt.Errorf("failed to check reporter trust status: %w", err)
+	}
+
 	// Create cases for each subject
 	for _, subject := range allSubjects {
 		// Create a new case model copy for each subject
 		caseCopy := *caseModel
 		caseCopy.SubjectID = subject.ID
 		caseCopy.ReporterID = reporter.ID
+		caseCopy.NeedsReview = !isTrusted // Use pre-checked trust status
 
 		// Create the case
 		createdCase, err := s.caseSvc.Create(&caseCopy)
