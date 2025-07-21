@@ -211,6 +211,7 @@ func (r *CaseResponse) FromModel(c *models.Case) error {
 	r.CreatedAt = c.CreatedAt
 	r.UpdatedAt = c.UpdatedAt
 	r.ReferenceNumber = "CASE-" + c.ReferenceNumber // Ensure consistent prefix
+	r.Description = c.Description
 	r.Type = string(c.Type)
 	r.Status = string(c.Status)
 	r.Priority = string(c.Priority)
@@ -224,10 +225,10 @@ func (r *CaseResponse) FromModel(c *models.Case) error {
 // ToModel converts a create request DTO to a model
 func (req *CreateCaseRequest) ToModel() (*models.Case, error) {
 	caseModel := &models.Case{
-		Type:        models.CaseType(req.Type),
+		Type:        req.Type,
 		Description: req.Description,
-		Priority:    models.CasePriority(req.Priority),
-		Source:      models.ReportSource(req.Source),
+		Priority:    req.Priority,
+		Source:      req.Source,
 		NeedsReview: req.NeedsReview,
 		ReporterID:  uint(req.ReporterID),
 		SubjectID:   uint(req.SubjectID),
