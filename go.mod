@@ -26,14 +26,14 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.lumeweb.com/gswagger v0.20.8
 	go.lumeweb.com/httputil v0.5.3
-	go.lumeweb.com/portal v0.4.2-0.20250715231151-83bb43120dd2
+	go.lumeweb.com/portal v0.4.2-0.20250722101051-5fa1cb4088aa
 	go.lumeweb.com/portal-middleware v0.2.9
-	go.lumeweb.com/portal-router v0.6.1
+	go.lumeweb.com/portal-router v0.6.2
 	go.lumeweb.com/queryutil v0.3.12
 	go.lumeweb.com/web/go/portal-abuse-report v0.0.0-20250721203000-f3f43e506eea
 	go.lumeweb.com/web/go/portal-plugin-abuse v0.0.0-20250721203000-f3f43e506eea
 	go.lumeweb.com/web/go/portal-plugin-abuse-report v0.0.0-20250721203000-f3f43e506eea
-	go.sia.tech/coreutils v0.16.4
+	go.sia.tech/coreutils v0.16.5
 	go.uber.org/zap v1.27.0
 	gorm.io/datatypes v1.2.6
 	gorm.io/gorm v1.30.0
@@ -91,7 +91,6 @@ require (
 	github.com/go-gorm/caches/v4 v4.0.5 // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
-	github.com/go-redsync/redsync/v4 v4.13.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -101,8 +100,6 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gotd/contrib v0.21.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -162,7 +159,7 @@ require (
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/spf13/afero v1.2.1 // indirect
+	github.com/spf13/afero v1.14.0 // indirect
 	github.com/spf13/cast v1.9.2 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tus/tusd/v2 v2.7.1 // indirect
@@ -172,10 +169,10 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/wneessen/go-mail v0.6.2 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
-	go.etcd.io/etcd/api/v3 v3.6.1 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.6.1 // indirect
-	go.etcd.io/etcd/client/v3 v3.6.1 // indirect
-	go.lumeweb.com/configmanager v0.3.16 // indirect
+	go.etcd.io/etcd/api/v3 v3.6.2 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.6.2 // indirect
+	go.etcd.io/etcd/client/v3 v3.6.2 // indirect
+	go.lumeweb.com/configmanager v0.3.19 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
 	go.sia.tech/core v0.14.1 // indirect

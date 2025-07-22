@@ -110,7 +110,7 @@ func (a *AbuseAPI) OpenAPIInfo() router.APIInfoDefinition {
 // Configure sets up the API routes
 func (a *AbuseAPI) Configure(r router.Router, accessSvc core.AccessService) error {
 	// Setup static file serving
-	router.MustDefaultStaticSetup(r, portal_abuse_report.GetFS())
+	router.MustDefaultStaticSetup(r, router.NewAppFilesystem(portal_abuse_report.GetFS(), a.ctx.Config().Config().Core.Domain))
 
 	// Create an API group
 	apiGroup, err := r.Group("/api")
